@@ -796,6 +796,27 @@ static int brcms_request_fw(struct brcms_info *wl, struct bcma_device *pdev)
 				  KBUILD_MODNAME, fw_name);
 			return status;
 		}
+		sprintf(fw_name, "b43/ucode16_mimo.fw");
+		status = request_firmware(&wl->fw.ucode[i], fw_name, device);
+		if (status) {
+			wiphy_err(wl->wiphy, "%s: fail to load firmware %s\n",
+				  KBUILD_MODNAME, fw_name);
+			return status;
+		}
+		sprintf(fw_name, "b43/n0initvals16.fw");
+		status = request_firmware(&wl->fw.initvals[i], fw_name, device);
+		if (status) {
+			wiphy_err(wl->wiphy, "%s: fail to load firmware %s\n",
+				  KBUILD_MODNAME, fw_name);
+			return status;
+		}
+		sprintf(fw_name, "b43/n0bsinitvals16.fw");
+		status = request_firmware(&wl->fw.initvals_band[i], fw_name, device);
+		if (status) {
+			wiphy_err(wl->wiphy, "%s: fail to load firmware %s\n",
+				  KBUILD_MODNAME, fw_name);
+			return status;
+		}
 		wl->fw.hdr_num_entries[i] =
 		    wl->fw.fw_hdr[i]->size / (sizeof(struct firmware_hdr));
 	}

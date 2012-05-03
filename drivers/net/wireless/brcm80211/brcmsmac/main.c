@@ -20,6 +20,7 @@
 #include <linux/if_ether.h>
 #include <net/cfg80211.h>
 #include <net/mac80211.h>
+#include <linux/firmware.h>
 #include <brcm_hw_ids.h>
 #include <aiutils.h>
 #include <chipcommon.h>
@@ -715,6 +716,124 @@ static void brcms_c_write_inits(struct brcms_hardware *wlc_hw,
 	}
 }
 
+/* Initial Value file format */
+#define B43_IV_OFFSET_MASK	0x7FFF
+#define B43_IV_32BIT		0x8000
+struct b43_iv {
+	__be16 offset_size;
+	union {
+		__be16 d16;
+		__be32 d32;
+	} data __packed;
+} __packed;
+
+struct b43_fw_header {
+	/* File type */
+	u8 type;
+	/* File format version */
+	u8 ver;
+	u8 __padding[2];
+	/* Size of the data. For ucode and PCM this is in bytes.
+	 * For IV this is number-of-ivs. */
+	__be32 size;
+} __packed;
+
+
+static int b43_write_initvals(struct brcms_hardware *wlc_hw,
+			      const struct b43_iv *ivals,
+			      size_t count,
+			      size_t array_size)
+{
+	struct bcma_device *core = wlc_hw->d11core;
+	const struct b43_iv *iv;
+	u16 offset;
+	size_t i;
+	bool bit32;
+
+	BUILD_BUG_ON(sizeof(struct b43_iv) != 6);
+	iv = ivals;
+	for (i = 0; i < count; i++) {
+		if (array_size < sizeof(iv->offset_size))
+			goto err_format;
+		array_size -= sizeof(iv->offset_size);
+		offset = be16_to_cpu(iv->offset_size);
+		bit32 = !!(offset & B43_IV_32BIT);
+		offset &= B43_IV_OFFSET_MASK;
+		if (offset >= 0x1000)
+			goto err_format;
+		if (bit32) {
+			u32 value;
+
+			if (array_size < sizeof(iv->data.d32))
+				goto err_format;
+			array_size -= sizeof(iv->data.d32);
+
+			value = get_unaligned_be32(&iv->data.d32);
+			bcma_write32(core, offset, value);
+
+			iv = (const struct b43_iv *)((const uint8_t *)iv +
+							sizeof(__be16) +
+							sizeof(__be32));
+		} else {
+			u16 value;
+
+			if (array_size < sizeof(iv->data.d16))
+				goto err_format;
+			array_size -= sizeof(iv->data.d16);
+
+			value = be16_to_cpu(iv->data.d16);
+			bcma_write16(core, offset, value);
+
+			iv = (const struct b43_iv *)((const uint8_t *)iv +
+							sizeof(__be16) +
+							sizeof(__be16));
+		}
+	}
+	if (array_size)
+		goto err_format;
+
+	return 0;
+
+err_format:
+	printk("Initial Values Firmware file-format error.\n");
+
+	return -EPROTO;
+}
+
+static int b43_upload_initvals(struct brcms_hardware *wlc_hw,
+			       const struct firmware *initvals,
+			       const struct firmware *initvals_band)
+{
+	const size_t hdr_len = sizeof(struct b43_fw_header);
+	const struct b43_fw_header *hdr;
+	const struct b43_iv *ivals;
+	size_t count;
+	int err;
+	printk("b43_upload_initvals start: initvals: %p, initvals_band: %p\n", initvals, initvals_band);
+
+	if (initvals) {
+		hdr = (const struct b43_fw_header *)(initvals->data);
+		ivals = (const struct b43_iv *)(initvals->data + hdr_len);
+		count = be32_to_cpu(hdr->size);
+		err = b43_write_initvals(wlc_hw, ivals, count,
+					 initvals->size - hdr_len);
+		if (err)
+			goto out;
+	}
+	if (initvals_band) {
+		hdr = (const struct b43_fw_header *)(initvals_band->data);
+		ivals = (const struct b43_iv *)(initvals_band->data + hdr_len);
+		count = be32_to_cpu(hdr->size);
+		err = b43_write_initvals(wlc_hw, ivals, count,
+					 initvals_band->size - hdr_len);
+		if (err)
+			goto out;
+	}
+out:
+
+	return err;
+}
+
 static void brcms_c_write_mhf(struct brcms_hardware *wlc_hw, u16 *mhfs)
 {
 	u8 idx;
@@ -738,7 +857,8 @@ static void brcms_c_ucode_bsinit(struct brcms_hardware *wlc_hw)
 	/* do band-specific ucode IHR, SHM, and SCR inits */
 	if (D11REV_IS(wlc_hw->corerev, 17) || D11REV_IS(wlc_hw->corerev, 23) || D11REV_IS(wlc_hw->corerev, 28)) {
 		if (BRCMS_ISNPHY(wlc_hw->band))
-			brcms_c_write_inits(wlc_hw, ucode->d11n0bsinitvals16);
+			b43_upload_initvals(wlc_hw, NULL, wlc_hw->wlc->wl->fw.initvals_band[0]);
+//			brcms_c_write_inits(wlc_hw, ucode->d11n0bsinitvals16);
 		else
 			wiphy_err(wiphy, "%s: wl%d: unsupported phy in corerev"
 				  " %d\n", __func__, wlc_hw->unit,
@@ -2251,10 +2371,30 @@ static void brcms_ucode_write(struct brcms_hardware *wlc_hw,
 
 }
 
+static void brcms_ucode_write_be(struct brcms_hardware *wlc_hw,
+			      const __be32 ucode[], const size_t nbytes)
+{
+	struct bcma_device *core = wlc_hw->d11core;
+	uint i;
+	uint count;
+
+	BCMMSG(wlc_hw->wlc->wiphy, "wl%d\n", wlc_hw->unit);
+
+	count = (nbytes / sizeof(u32));
+
+	bcma_write32(core, D11REGOFFS(objaddr),
+		     OBJADDR_AUTO_INC | OBJADDR_UCM_SEL);
+	(void)bcma_read32(core, D11REGOFFS(objaddr));
+	for (i = 0; i < count; i++)
+		bcma_write32(core, D11REGOFFS(objdata), be32_to_cpu(ucode[i]));
+
+}
+
 static void brcms_ucode_download(struct brcms_hardware *wlc_hw)
 {
 	struct brcms_c_info *wlc;
 	struct brcms_ucode *ucode = &wlc_hw->wlc->wl->ucode;
+	const size_t hdr_len = sizeof(struct b43_fw_header);
 
 	wlc = wlc_hw->wlc;
 
@@ -2263,8 +2403,15 @@ static void brcms_ucode_download(struct brcms_hardware *wlc_hw)
 
 	if (D11REV_IS(wlc_hw->corerev, 17) || D11REV_IS(wlc_hw->corerev, 23) || D11REV_IS(wlc_hw->corerev, 28)) {
 		if (BRCMS_ISNPHY(wlc_hw->band)) {
-			brcms_ucode_write(wlc_hw, ucode->bcm43xx_16_mimo,
-					  ucode->bcm43xx_16_mimosz);
+//			brcms_ucode_write(wlc_hw, ucode->bcm43xx_16_mimo,
+//					  ucode->bcm43xx_16_mimosz);
+
+			const struct firmware *blob = wlc_hw->wlc->wl->fw.ucode[0];
+			struct b43_fw_header *hdr = (struct b43_fw_header *)(blob->data);
+			u32 size = be32_to_cpu(hdr->size);
+
+			brcms_ucode_write_be(wlc_hw, (__be32 *)(blob->data + hdr_len),
+					  blob->size - hdr_len);
 			wlc_hw->ucode_loaded = true;
 		} else
 			wiphy_err(wlc->wiphy, "%s: wl%d: unsupported phy in "
@@ -3225,7 +3372,8 @@ static void brcms_b_coreinit(struct brcms_c_info *wlc)
 
 	if (D11REV_IS(wlc_hw->corerev, 17) || D11REV_IS(wlc_hw->corerev, 23) || D11REV_IS(wlc_hw->corerev, 28)) {
 		if (BRCMS_ISNPHY(wlc_hw->band))
-			brcms_c_write_inits(wlc_hw, ucode->d11n0initvals16);
+			b43_upload_initvals(wlc_hw, wlc_hw->wlc->wl->fw.initvals[0], NULL);
+//			brcms_c_write_inits(wlc_hw, ucode->d11n0initvals16);
 		else
 			wiphy_err(wiphy, "%s: wl%d: unsupported phy in corerev"
 				  " %d\n", __func__, wlc_hw->unit,

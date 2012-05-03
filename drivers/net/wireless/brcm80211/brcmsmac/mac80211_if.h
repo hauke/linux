@@ -55,6 +55,9 @@ struct brcms_firmware {
 	u32 fw_cnt;
 	const struct firmware *fw_bin[MAX_FW_IMAGES];
 	const struct firmware *fw_hdr[MAX_FW_IMAGES];
+	const struct firmware *ucode[MAX_FW_IMAGES];
+	const struct firmware *initvals[MAX_FW_IMAGES];
+	const struct firmware *initvals_band[MAX_FW_IMAGES];
 	u32 hdr_num_entries[MAX_FW_IMAGES];
 };
 
