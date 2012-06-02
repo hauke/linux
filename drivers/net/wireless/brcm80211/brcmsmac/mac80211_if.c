@@ -31,6 +31,7 @@
 #include "scb.h"
 #include "pub.h"
 #include "ucode_loader.h"
+#include "aiutils.h"
 #include "mac80211_if.h"
 #include "main.h"
 
@@ -311,6 +312,7 @@ static int brcms_ops_start(struct ieee80211_hw *hw)
 static void brcms_ops_stop(struct ieee80211_hw *hw)
 {
 	struct brcms_info *wl = hw->priv;
+	struct si_info *sii;
 	int status;
 
 	ieee80211_stop_queues(hw);
@@ -318,14 +320,18 @@ static void brcms_ops_stop(struct ieee80211_hw *hw)
 	if (wl->wlc == NULL)
 		return;
 
-	spin_lock_bh(&wl->lock);
-	status = brcms_c_chipmatch(wl->wlc->hw->vendorid,
-				   wl->wlc->hw->deviceid);
-	spin_unlock_bh(&wl->lock);
-	if (!status) {
-		wiphy_err(wl->wiphy,
-			  "wl: brcms_ops_stop: chipmatch failed\n");
-		return;
+	sii = container_of(wl->pub->sih, struct si_info, pub);
+
+	if (sii->icbus->hosttype == BCMA_HOSTTYPE_PCI) {
+		spin_lock_bh(&wl->lock);
+		status = brcms_c_chipmatch(wl->wlc->hw->vendorid,
+					   wl->wlc->hw->deviceid);
+		spin_unlock_bh(&wl->lock);
+		if (!status) {
+			wiphy_err(wl->wiphy,
+				  "wl: brcms_ops_stop: chipmatch failed\n");
+			return;
+		}
 	}
 
 	/* put driver in down state */
