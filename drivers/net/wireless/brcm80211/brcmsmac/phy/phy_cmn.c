@@ -837,8 +837,8 @@ wlc_phy_table_addr(struct brcms_phy *pi, uint tbl_id, uint tbl_offset,
 	pi->tbl_data_hi = tblDataHi;
 	pi->tbl_data_lo = tblDataLo;
 
-	if (pi->sh->chip == BCMA_CHIP_ID_BCM43224 &&
-	    pi->sh->chiprev == 1) {
+	if ((pi->sh->chip == BCMA_CHIP_ID_BCM43224) &&
+	    (pi->sh->chiprev == 1)) {
 		pi->tbl_addr = tblAddr;
 		pi->tbl_save_id = tbl_id;
 		pi->tbl_save_offset = tbl_offset;
