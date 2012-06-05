@@ -256,10 +256,24 @@ do {						\
  * transactions. As a fix, a read after write is performed on certain places
  * in the code. Older chips and the newer 5357 family don't require this fix.
  */
-#define bcma_wflush16(c, o, v) \
-	({ bcma_write16(c, o, v); (void)bcma_read16(c, o); })
+#include <asm/mach-bcm47xx/bcm47xx.h>
+static inline void bcma_wflush16(struct bcma_device *core, u16 offset, u32 value)
+{
+	if (core->bus->hosttype == BCMA_HOSTTYPE_PCI &&
+	    bcm47xx_bus_type == BCM47XX_BUS_TYPE_BCMA &&
+	    (bcm47xx_bus.bcma.bus.chipinfo.id == BCMA_CHIP_ID_BCM4716 ||
+	     bcm47xx_bus.bcma.bus.chipinfo.id == BCMA_CHIP_ID_BCM4706)) {
+		bcma_write16(core, offset, value);
+		bcma_read16(core, offset);
+	} else {
+		bcma_write16(core, offset, value);
+	}
+}
 #else
-#define bcma_wflush16(c, o, v)	bcma_write16(c, o, v)
+static inline void bcma_wflush16(struct bcma_device *core, u16 offset, u32 value)
+{
+	bcma_write16(core, offset, value);
+}
 #endif				/* CONFIG_BCM47XX */
 
 /* multi-bool data type: set of bools, mbool is true if any is set */
