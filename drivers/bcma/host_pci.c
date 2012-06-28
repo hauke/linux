@@ -188,8 +188,8 @@ static int __devinit bcma_host_pci_probe(struct pci_dev *dev,
 		pci_write_config_dword(dev, 0x40, val & 0xffff00ff);
 
 	/* SSB needed additional powering up, do we have any AMBA PCI cards? */
-	if (!pci_is_pcie(dev))
-		pr_err("PCI card detected, report problems.\n");
+	/* BCMA will have problems with PCI cards */
+	WARN(!pci_is_pcie(dev), "PCI card detected, report problems.");
 
 	/* Map MMIO */
 	err = -ENOMEM;
