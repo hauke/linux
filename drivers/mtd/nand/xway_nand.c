@@ -66,6 +66,7 @@
 
 struct xway_nand_data {
 	struct nand_chip	chip;
+	u32			xway_latchcmd;
 };
 
 static void xway_reset_chip(struct nand_chip *chip)
@@ -103,22 +104,21 @@ static void xway_select_chip(struct mtd_info *mtd, int chip)
 
 static void xway_cmd_ctrl(struct mtd_info *mtd, int cmd, unsigned int ctrl)
 {
-	struct nand_chip *this = mtd_to_nand(mtd);
-	unsigned long nandaddr = (unsigned long) this->IO_ADDR_W;
+	struct nand_chip *chip = mtd_to_nand(mtd);
+	struct xway_nand_data *data = nand_get_controller_data(chip);
+	unsigned long nandaddr = (unsigned long) chip->IO_ADDR_W;
 	unsigned long flags;
 
 	if (ctrl & NAND_CTRL_CHANGE) {
-		nandaddr &= ~(NAND_WRITE_CMD | NAND_WRITE_ADDR);
 		if (ctrl & NAND_CLE)
-			nandaddr |= NAND_WRITE_CMD;
-		else
-			nandaddr |= NAND_WRITE_ADDR;
-		this->IO_ADDR_W = (void __iomem *) nandaddr;
+			data->xway_latchcmd = NAND_WRITE_CMD;
+		else if (ctrl & NAND_ALE)
+			data->xway_latchcmd = NAND_WRITE_ADDR;
 	}
 
 	if (cmd != NAND_CMD_NONE) {
 		spin_lock_irqsave(&ebu_lock, flags);
-		writeb(cmd, this->IO_ADDR_W);
+		writeb(cmd, (void __iomem *) (nandaddr | data->xway_latchcmd));
 		while ((ltq_ebu_r32(EBU_NAND_WAIT) & NAND_WAIT_WR_C) == 0)
 			;
 		spin_unlock_irqrestore(&ebu_lock, flags);
