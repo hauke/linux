@@ -35,6 +35,7 @@ void __init plat_time_init(void)
 	u16 chip_id = 0;
 	char buf[10];
 	int len;
+	enum bcm47xx_board board = bcm47xx_board_get();
 
 	/*
 	 * Use deterministic values for initial counter interrupt
@@ -62,6 +63,15 @@ void __init plat_time_init(void)
 		len = bcm47xx_nvram_getenv("clkfreq", buf, sizeof(buf));
 		if (len >= 0 && !strncmp(buf, "200", 4))
 			hz = 100000000;
+	}
+
+	switch (board) {
+	case BCM47XX_BOARD_ASUS_WL520GC:
+	case BCM47XX_BOARD_ASUS_WL520GU:
+		hz = 100000000;
+		break;
+	default:
+		break;
 	}
 
 	if (!hz)
