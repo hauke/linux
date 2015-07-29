@@ -1,0 +1,59 @@
+Lantiq XWAY SoC RCU USB 1.1/2.0 PHY binding
+===========================================
+
+This binding describes the USB PHY hardware provided by the RCU module on the
+Lantiq XWAY SoCs.
+
+
+-------------------------------------------------------------------------------
+Required properties (controller (parent) node):
+- compatible		: Should be one of
+				"lantiq,ase-rcu-usb2-phy"
+				"lantiq,danube-rcu-usb2-phy"
+				"lantiq,xrx100-rcu-usb2-phy"
+				"lantiq,xrx200-rcu-usb2-phy"
+				"lantiq,xrx300-rcu-usb2-phy"
+- lantiq,rcu-syscon	: A phandle to the RCU module and the offsets to the
+			  USB PHY configuration and USB MAC registers.
+- address-cells		: should be 1
+- size-cells		: should be 0
+- phy-cells		: from the generic PHY bindings, must be 1
+
+Optional properties (controller (parent) node):
+- vbus-gpio		: References a GPIO which enables VBUS all given USB
+			  ports.
+
+Required nodes		:  A sub-node is required for each USB PHY port.
+
+
+-------------------------------------------------------------------------------
+Required properties (port (child) node):
+- reg        	: The ID of the USB port, usually 0 or 1.
+- clocks	: References to the (PMU) "ctrl" and "phy" clk gates.
+- clock-names	: Must be one of the following:
+			"ctrl"
+			"phy"
+- resets	: References to the RCU USB configuration reset bits.
+- reset-names	: Must be one of the following:
+			"analog-config" (optional)
+			"statemachine-soft" (optional)
+
+Optional properties (port (child) node):
+- vbus-gpio	: References a GPIO which enables VBUS for the USB port.
+
+
+-------------------------------------------------------------------------------
+Example for the USB PHYs on an xRX200 SoC:
+	usb_phys0: rcu-usb2-phy@0 {
+		compatible      = "lantiq,xrx200-rcu-usb2-phy";
+		reg = <0>;
+
+		lantiq,rcu-syscon = <&rcu0 0x18 0x38>;
+		clocks = <&pmu PMU_GATE_USB0_CTRL>,
+			 <&pmu PMU_GATE_USB0_PHY>;
+		clock-names = "ctrl", "phy";
+		vbus-gpios = <&gpio 32 GPIO_ACTIVE_HIGH>;
+		resets = <&rcu_reset1 4>, <&rcu_reset0 4>;
+		reset-names = "phy", "ctrl";
+		#phy-cells = <0>;
+	};
