@@ -1,0 +1,41 @@
+Lantiq XWAY SoC RCU USB 1.1/2.0 PHY binding
+===========================================
+
+This binding describes the USB PHY hardware provided by the RCU module on the
+Lantiq XWAY SoCs.
+
+This driver has to be a sub node of the Lantiq RCU block. 
+
+-------------------------------------------------------------------------------
+Required properties (controller (parent) node):
+- compatible	: Should be one of
+			"lantiq,ase-usb2-phy"
+			"lantiq,danube-usb2-phy"
+			"lantiq,xrx100-usb2-phy"
+			"lantiq,xrx200-usb2-phy"
+			"lantiq,xrx300-usb2-phy"
+- offset-phy	: Offset of the USB PHY configuration register
+- offset-ana	: Offset of the USB Analog configuration register
+- clocks	: References to the (PMU) "ctrl" and "phy" clk gates.
+- clock-names	: Must be one of the following:
+			"ctrl"
+			"phy"
+- resets	: References to the RCU USB configuration reset bits.
+- reset-names	: Must be one of the following:
+			"phy" (optional)
+			"ctrl" (shared)
+
+-------------------------------------------------------------------------------
+Example for the USB PHYs on an xRX200 SoC:
+	usb_phy0: usb2-phy@0 {
+		compatible = "lantiq,xrx200-usb2-phy";
+
+		offset-phy = <0x18>;
+		offset-ana = <0x38>;
+		clocks = <&pmu PMU_GATE_USB0_CTRL>,
+			 <&pmu PMU_GATE_USB0_PHY>;
+		clock-names = "ctrl", "phy";
+		resets = <&reset1 4 4>, <&reset0 4 4>;
+		reset-names = "phy", "ctrl";
+		#phy-cells = <0>;
+	};
