@@ -1,0 +1,33 @@
+Lantiq XWAY SoC FPI BUS binding
+============================
+
+
+-------------------------------------------------------------------------------
+Required properties:
+- compatible	: Should be one of
+				"lantiq,fpi-xrx200"
+- reg		: The address and length of the XBAR configuration register.
+		  Address and length of the FPI bus itself
+
+Optional properties:
+- regmap		: A phandle to the RCU syscon
+- offset-endianness	: Offset of the endianness configuration register
+
+
+-------------------------------------------------------------------------------
+Example for the FPI on the xrx200 SoCs:
+	fpi@10000000 {
+		compatible = "lantiq,fpi-xrx200", "simple-bus";
+		ranges = <0x0 0x10000000 0xF000000>;
+		reg =	<0x1F400000 0x1000>,
+			<0x10000000 0xF000000>;
+		regmap = <&rcu0>;
+		offset-endianness = <0x4c>;
+		big-endian;
+		#address-cells = <1>;
+		#size-cells = <1>;
+
+		gptu@E100A00 {
+			......
+		};
+	};
