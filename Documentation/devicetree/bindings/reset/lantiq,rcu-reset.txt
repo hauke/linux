@@ -1,0 +1,43 @@
+Lantiq XWAY SoC RCU reset controller binding
+============================================
+
+This binding describes a reset-controller found on the RCU module on Lantiq
+XWAY SoCs.
+
+
+-------------------------------------------------------------------------------
+Required properties (controller (parent) node):
+- compatible		: Should be "lantiq,rcu-reset"
+- lantiq,rcu-syscon	: A phandle to the RCU syscon, the reset register
+			  offset and the status register offset.
+- #reset-cells		: Specifies the number of cells needed to encode the
+			  reset line, should be 1.
+
+Optional properties:
+- reset-status		: The request status bit. For some bits the request bit
+			  and the status bit are different. This is depending
+			  on the SoC. If the reset-status bit does not match
+			  the reset-request bit, put the reset number into the
+			  reset-request property and the status bit at the same
+			  index into the reset-status property. If no
+			  reset-request bit is given here, the driver assume
+			  status and request bit are the same.
+- reset-request		: The reset request bit, to map it to the reset-status
+			  bit.
+
+
+-------------------------------------------------------------------------------
+Example for the reset-controllers on the xRX200 SoCs:
+	rcu_reset0: rcu_reset {
+		compatible = "lantiq,rcu-reset";
+		lantiq,rcu-syscon = <&rcu0 0x10 0x14>;
+		#reset-cells = <1>;
+		reset-request = <31>, <29>, <21>, <19>, <16>, <12>;
+		reset-status  = <30>, <28>, <16>, <25>, <5>,  <24>;
+	};
+
+	rcu_reset1: rcu_reset {
+		compatible = "lantiq,rcu-reset";
+		lantiq,rcu-syscon = <&rcu0 0x48 0x24>;
+		#reset-cells = <1>;
+	};
