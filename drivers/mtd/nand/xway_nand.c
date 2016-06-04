@@ -19,10 +19,20 @@
 #define EBU_NAND_ECC0		0xB8
 #define EBU_NAND_ECC_AC		0xBC
 
-/* nand commands */
+/*
+ * nand commands
+ * The pins of the NAND chip are selected based on the address bits of the
+ * "register" read and write. There are no special registers, but an
+ * address range and the lower address bits are used to activate the
+ * correct line. For example when the bit (1 << 2) is set in the address
+ * the ALE pin will be activated.
+ */
 #define NAND_CMD_ALE		(1 << 2)
 #define NAND_CMD_CLE		(1 << 3)
 #define NAND_CMD_CS		(1 << 4)
+#define NAND_CMD_SE		(1 << 5)
+#define NAND_CMD_WP		(1 << 6)
+#define NAND_CMD_PRE		(1 << 7)
 #define NAND_WRITE_CMD_RESET	0xff
 #define NAND_WRITE_CMD		(NAND_CMD_CS | NAND_CMD_CLE)
 #define NAND_WRITE_ADDR		(NAND_CMD_CS | NAND_CMD_ALE)
