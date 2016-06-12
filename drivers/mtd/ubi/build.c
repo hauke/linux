@@ -33,6 +33,7 @@
 #include <linux/module.h>
 #include <linux/moduleparam.h>
 #include <linux/stringify.h>
+#include <linux/of.h>
 #include <linux/namei.h>
 #include <linux/stat.h>
 #include <linux/miscdevice.h>
@@ -43,6 +44,7 @@
 #include <linux/slab.h>
 #include <linux/major.h>
 #include "ubi.h"
+#include "../mtdcore.h"
 
 /* Maximum length of the 'mtd=' parameter */
 #define MTD_PARAM_LEN_MAX 64
@@ -1205,6 +1207,7 @@ static struct mtd_info * __init open_mtd_device(const char *mtd_dev)
 static int __init ubi_init(void)
 {
 	int err, i, k;
+	struct mtd_info *mtd_it;
 
 	/* Ensure that EC and VID headers have correct size */
 	BUILD_BUG_ON(sizeof(struct ubi_ec_hdr) != 64);
@@ -1283,6 +1286,36 @@ static int __init ubi_init(void)
 			if (ubi_is_module())
 				goto out_detach;
 		}
+	}
+
+	mtd_for_each_device(mtd_it) {
+		struct mtd_info *mtd;
+		u32 ubi_num = 0;
+		u32 vid_hdr_offs = 0;
+		u32 max_beb_per1024 = CONFIG_MTD_UBI_BEB_LIMIT;
+
+		mtd = get_mtd_device(mtd_it, -1);
+
+		if (!of_device_is_compatible(mtd->dev.of_node, "ubi,device")) {
+			put_mtd_device(mtd);
+			continue;
+		}
+
+		of_property_read_u32(mtd->dev.of_node, "vid_hdr_offs",
+				     &vid_hdr_offs);
+		of_property_read_u32(mtd->dev.of_node, "max_beb_per1024",
+				     &max_beb_per1024);
+		of_property_read_u32(mtd->dev.of_node, "ubi_num", &ubi_num);
+
+		mutex_lock(&ubi_devices_mutex);
+		err = ubi_attach_mtd_dev(mtd, ubi_num, vid_hdr_offs,
+					 max_beb_per1024);
+		mutex_unlock(&ubi_devices_mutex);
+		if (err < 0) {
+			pr_err("UBI error: cannot attach mtd%d",
+			       mtd->index);
+		}
+		put_mtd_device(mtd);
 	}
 
 	err = ubiblock_init();
