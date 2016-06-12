@@ -33,7 +33,6 @@
 #define NAND_CMD_SE		(1 << 5)
 #define NAND_CMD_WP		(1 << 6)
 #define NAND_CMD_PRE		(1 << 7)
-#define NAND_WRITE_CMD_RESET	0xff
 #define NAND_WRITE_CMD		(NAND_CMD_CS | NAND_CMD_CLE)
 #define NAND_WRITE_ADDR		(NAND_CMD_CS | NAND_CMD_ALE)
 #define NAND_WRITE_DATA		(NAND_CMD_CS)
@@ -98,7 +97,7 @@ static void xway_reset_chip(struct nand_chip *chip)
 	timeout = jiffies + msecs_to_jiffies(20);
 
 	spin_lock_irqsave(&ebu_lock, flags);
-	writeb(NAND_WRITE_CMD_RESET, (void __iomem *) nandaddr);
+	writeb(NAND_CMD_RESET, (void __iomem *) nandaddr);
 	do {
 		if ((ltq_ebu_r32(EBU_NAND_WAIT) & NAND_WAIT_WR_C) == 0)
 			break;
