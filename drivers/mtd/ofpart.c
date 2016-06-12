@@ -120,6 +120,8 @@ static int parse_ofpart_partitions(struct mtd_info *master,
 		if (of_get_property(pp, "lock", &len))
 			parts[i].mask_flags |= MTD_POWERUP_LOCK;
 
+		parts[i].of_node = pp;
+
 		i++;
 	}
 

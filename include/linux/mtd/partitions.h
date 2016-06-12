@@ -41,6 +41,7 @@ struct mtd_partition {
 	uint64_t size;			/* partition size */
 	uint64_t offset;		/* offset within the master MTD space */
 	uint32_t mask_flags;		/* master MTD flags to mask out for this partition */
+	struct device_node *of_node;	/* device tree node of this partition */
 };
 
 #define MTDPART_OFS_RETAIN	(-3)
