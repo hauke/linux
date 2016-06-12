@@ -13,6 +13,16 @@ Describe of a UBI layer in device tree.
  			which have to be assigned to the newly created UBI
  			device (assigned automatically by default)
 
+Partitions on a UBI layer can be defined:
+
+ - compatible: 		"ubi,volume"
+ - name:		name of the ubi volume to open
+ - ubi-mode:		mode of the ubi volume to open value:
+ 			UBI_READONLY:	1
+ 			UBI_READWRITE:	2
+ 			UBI_EXCLUSIVE:	3
+ 			UBI_METAONLY:	4
+
 Example:
 
 partitions {
@@ -29,5 +39,17 @@ partitions {
 		label = "system_sw";
 		reg = <0x1c0000 0xc800000>;
 		compatible = "ubi,device";
+
+		rootfsA@0 {
+			compatible = "ubi,volume";
+			name = "rootfsA";
+			ubi-mode = <1>;
+		};
+
+		data_vol@0 {
+			compatible = "ubi,volume";
+			name = "data_vol";
+			ubi-mode = <2>;
+		};
 	};
 };
