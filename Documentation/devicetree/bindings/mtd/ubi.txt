@@ -1,0 +1,33 @@
+UBI - Unsorted block images
+
+Describe of a UBI layer in device tree.
+
+ - compatible:		"ubi,device", This marks a partition that contains
+ 			a ubi layer.
+ - vid_hdr_offs:	Optional parameter specifies UBI VID header position
+ 			to be used by UBI. (default value if 0)
+ - max_beb_per1024:	Optional parameter specifies the maximum expected bad
+ 			eraseblock per 1024 eraseblocks.
+ 			(default value CONFIG_MTD_UBI_BEB_LIMIT)
+ -ubi_num:		Optional parameter specifies UBI device number
+ 			which have to be assigned to the newly created UBI
+ 			device (assigned automatically by default)
+
+Example:
+
+partitions {
+	compatible = "fixed-partitions";
+	#address-cells = <1>;
+	#size-cells = <1>;
+
+	partition@0 {
+		label = "uboot";
+		reg = <0x00000 0x100000>;
+	};
+
+	partition@1c0000 {
+		label = "system_sw";
+		reg = <0x1c0000 0xc800000>;
+		compatible = "ubi,device";
+	};
+};

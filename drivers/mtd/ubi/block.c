@@ -1,6 +1,7 @@
 /*
  * Copyright (c) 2014 Ezequiel Garcia
  * Copyright (c) 2011 Free Electrons
+ * Copyright (c) 2016 Hauke Mehrtens <hauke@hauke-m.de>
  *
  * Driver parameter handling strongly based on drivers/mtd/ubi/build.c
  *   Copyright (c) International Business Machines Corp., 2006
@@ -41,6 +42,7 @@
 #include <linux/kernel.h>
 #include <linux/list.h>
 #include <linux/mutex.h>
+#include <linux/of.h>
 #include <linux/slab.h>
 #include <linux/mtd/ubi.h>
 #include <linux/workqueue.h>
@@ -628,6 +630,64 @@ static void __init ubiblock_create_from_param(void)
 	}
 }
 
+static void __init ubiblock_create_from_device_tree(void)
+{
+	int ubi_num;
+	const char *name;
+	u32 mode;
+	struct ubi_device *ubi;
+	struct ubi_volume_desc *desc;
+	struct ubi_volume_info vi;
+	struct mtd_info *mtd;
+	struct device_node *volume;
+	int ret;
+
+	for (ubi_num = 0; ubi_num < UBI_MAX_DEVICES; ubi_num++) {
+		ubi = ubi_get_device(ubi_num);
+		if (!ubi)
+			continue;
+		mtd = ubi->mtd;
+		if (!mtd || !of_device_is_compatible(mtd->dev.of_node,
+						     "ubi,device")) {
+			ubi_put_device(ubi);
+			continue;
+		}
+
+		for_each_child_of_node(mtd->dev.of_node, volume) {
+			if (!of_device_is_compatible(volume, "ubi,volume"))
+				continue;
+
+			ret = of_property_read_string(volume, "name", &name);
+			if (ret)
+				continue;
+
+			ret = of_property_read_u32(volume, "ubi-mode", &mode);
+			if (ret)
+				continue;
+
+			desc = ubi_open_volume_nm(ubi_num, name, mode);
+			if (IS_ERR(desc)) {
+				pr_err(
+				       "UBI: block: can't open volume %s on ubi%d, err=%ld",
+				       name, ubi_num, PTR_ERR(desc));
+				continue;
+			}
+
+			ubi_get_volume_info(desc, &vi);
+			ubi_close_volume(desc);
+
+			ret = ubiblock_create(&vi);
+			if (ret) {
+				pr_err(
+				       "UBI: block: can't add '%s' volume on ubi%d, err=%d",
+				       vi.name, ubi_num, ret);
+				continue;
+			}
+		}
+		ubi_put_device(ubi);
+	}
+}
+
 static void ubiblock_remove_all(void)
 {
 	struct ubiblock *next;
@@ -657,6 +717,9 @@ int __init ubiblock_init(void)
 	 * still allow the module to load and leave any others up.
 	 */
 	ubiblock_create_from_param();
+
+	/* Attach block devices from device tree */
+	ubiblock_create_from_device_tree();
 
 	/*
 	 * Block devices are only created upon user requests, so we ignore
