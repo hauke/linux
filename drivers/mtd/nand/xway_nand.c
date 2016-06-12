@@ -69,6 +69,22 @@ struct xway_nand_data {
 	u32			xway_latchcmd;
 };
 
+static u8 xway_readb(struct mtd_info *mtd, int op)
+{
+	struct nand_chip *chip = mtd_to_nand(mtd);
+	unsigned long nandaddr = (unsigned long) chip->IO_ADDR_R;
+
+	return readb((void __iomem *)(nandaddr | op));
+}
+
+static void xway_writeb(struct mtd_info *mtd, int op, u8 value)
+{
+	struct nand_chip *chip = mtd_to_nand(mtd);
+	unsigned long nandaddr = (unsigned long) chip->IO_ADDR_W;
+
+	writeb(value, (void __iomem *)(nandaddr | op));
+}
+
 static void xway_reset_chip(struct nand_chip *chip)
 {
 	unsigned long nandaddr = (unsigned long) chip->IO_ADDR_W;
@@ -115,7 +131,6 @@ static void xway_cmd_ctrl(struct mtd_info *mtd, int cmd, unsigned int ctrl)
 {
 	struct nand_chip *chip = mtd_to_nand(mtd);
 	struct xway_nand_data *data = nand_get_controller_data(chip);
-	unsigned long nandaddr = (unsigned long) chip->IO_ADDR_W;
 
 	if (ctrl & NAND_CTRL_CHANGE) {
 		if (ctrl & NAND_CLE)
@@ -125,7 +140,7 @@ static void xway_cmd_ctrl(struct mtd_info *mtd, int cmd, unsigned int ctrl)
 	}
 
 	if (cmd != NAND_CMD_NONE) {
-		writeb(cmd, (void __iomem *) (nandaddr | data->xway_latchcmd));
+		xway_writeb(mtd, data->xway_latchcmd, cmd);
 		while ((ltq_ebu_r32(EBU_NAND_WAIT) & NAND_WAIT_WR_C) == 0)
 			;
 	}
@@ -138,31 +153,23 @@ static int xway_dev_ready(struct mtd_info *mtd)
 
 static unsigned char xway_read_byte(struct mtd_info *mtd)
 {
-	struct nand_chip *this = mtd_to_nand(mtd);
-	unsigned long nandaddr = (unsigned long) this->IO_ADDR_R;
-
-	return ltq_r8((void __iomem *)(nandaddr + NAND_READ_DATA));
+	return xway_readb(mtd, NAND_READ_DATA);
 }
-
 
 static void xway_read_buf(struct mtd_info *mtd, u_char *buf, int len)
 {
-	struct nand_chip *this = mtd_to_nand(mtd);
-	unsigned long nandaddr = (unsigned long) this->IO_ADDR_R;
 	int i;
 
 	for (i = 0; i < len; i++)
-		buf[i] = ltq_r8((void __iomem *)(nandaddr | NAND_READ_DATA));
+		buf[i] = xway_readb(mtd, NAND_READ_DATA);
 }
 
 static void xway_write_buf(struct mtd_info *mtd, const u_char *buf, int len)
 {
-	struct nand_chip *this = mtd_to_nand(mtd);
-	unsigned long nandaddr = (unsigned long) this->IO_ADDR_W;
 	int i;
 
 	for (i = 0; i < len; i++)
-		ltq_w8(buf[i], (void __iomem *)(nandaddr | NAND_WRITE_DATA));
+		xway_writeb(mtd, NAND_WRITE_DATA, buf[i]);
 }
 
 /*
