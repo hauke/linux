@@ -22,8 +22,8 @@
 #include "clk.h"
 
 /* access to the ebu needs to be locked between different drivers */
-DEFINE_SPINLOCK(ebu_lock);
-EXPORT_SYMBOL_GPL(ebu_lock);
+DEFINE_MUTEX(ebu_mutex);
+EXPORT_SYMBOL_GPL(ebu_mutex);
 
 /*
  * this struct is filled by the soc specific detection code and holds

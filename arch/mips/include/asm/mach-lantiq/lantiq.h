@@ -28,7 +28,7 @@
 extern __iomem void *ltq_ebu_membase;
 
 /* spinlock all ebu i/o */
-extern spinlock_t ebu_lock;
+extern struct mutex ebu_mutex;
 
 /* some irq helpers */
 extern void ltq_disable_irq(struct irq_data *data);

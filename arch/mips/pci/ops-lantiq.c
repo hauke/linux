@@ -29,7 +29,6 @@ static int ltq_pci_config_access(unsigned char access_type, struct pci_bus *bus,
 	unsigned int devfn, unsigned int where, u32 *data)
 {
 	unsigned long cfg_base;
-	unsigned long flags;
 	u32 temp;
 
 	/* we support slot from 0 to 15 dev_fn & 0x68 (AD29) is the
@@ -38,7 +37,7 @@ static int ltq_pci_config_access(unsigned char access_type, struct pci_bus *bus,
 		|| ((devfn & 0xf8) == 0) || ((devfn & 0xf8) == 0x68))
 		return 1;
 
-	spin_lock_irqsave(&ebu_lock, flags);
+	mutex_lock(&ebu_mutex);
 
 	cfg_base = (unsigned long) ltq_pci_mapped_cfg;
 	cfg_base |= (bus->number << LTQ_PCI_CFG_BUSNUM_SHF) | (devfn <<
@@ -62,7 +61,7 @@ static int ltq_pci_config_access(unsigned char access_type, struct pci_bus *bus,
 	cfg_base |= (0x68 << LTQ_PCI_CFG_FUNNUM_SHF) + 4;
 	ltq_w32(temp, ((u32 *)cfg_base));
 
-	spin_unlock_irqrestore(&ebu_lock, flags);
+	mutex_unlock(&ebu_mutex);
 
 	if (((*data) == 0xffffffff) && (access_type == PCI_ACCESS_READ))
 		return 1;

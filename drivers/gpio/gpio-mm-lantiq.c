@@ -42,13 +42,11 @@ struct ltq_mm {
  */
 static void ltq_mm_apply(struct ltq_mm *chip)
 {
-	unsigned long flags;
-
-	spin_lock_irqsave(&ebu_lock, flags);
+	mutex_lock(&ebu_mutex);
 	ltq_ebu_w32(LTQ_EBU_BUSCON, LTQ_EBU_BUSCON1);
 	__raw_writew(chip->shadow, chip->mmchip.regs);
 	ltq_ebu_w32(LTQ_EBU_BUSCON | LTQ_EBU_WP, LTQ_EBU_BUSCON1);
-	spin_unlock_irqrestore(&ebu_lock, flags);
+	mutex_unlock(&ebu_mutex);
 }
 
 /**

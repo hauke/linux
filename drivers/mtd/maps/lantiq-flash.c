@@ -49,27 +49,24 @@ static const char ltq_map_name[] = "ltq_nor";
 static map_word
 ltq_read16(struct map_info *map, unsigned long adr)
 {
-	unsigned long flags;
 	map_word temp;
 
 	if (map->map_priv_1 == LTQ_NOR_PROBING)
 		adr ^= 2;
-	spin_lock_irqsave(&ebu_lock, flags);
+	mutex_lock(&ebu_mutex);
 	temp.x[0] = *(u16 *)(map->virt + adr);
-	spin_unlock_irqrestore(&ebu_lock, flags);
+	mutex_unlock(&ebu_mutex);
 	return temp;
 }
 
 static void
 ltq_write16(struct map_info *map, map_word d, unsigned long adr)
 {
-	unsigned long flags;
-
 	if (map->map_priv_1 == LTQ_NOR_PROBING)
 		adr ^= 2;
-	spin_lock_irqsave(&ebu_lock, flags);
+	mutex_lock(&ebu_mutex);
 	*(u16 *)(map->virt + adr) = d.x[0];
-	spin_unlock_irqrestore(&ebu_lock, flags);
+	mutex_unlock(&ebu_mutex);
 }
 
 /*
@@ -85,12 +82,11 @@ ltq_copy_from(struct map_info *map, void *to,
 {
 	unsigned char *f = (unsigned char *)map->virt + from;
 	unsigned char *t = (unsigned char *)to;
-	unsigned long flags;
 
-	spin_lock_irqsave(&ebu_lock, flags);
+	mutex_lock(&ebu_mutex);
 	while (len--)
 		*t++ = *f++;
-	spin_unlock_irqrestore(&ebu_lock, flags);
+	mutex_unlock(&ebu_mutex);
 }
 
 static void
@@ -99,12 +95,11 @@ ltq_copy_to(struct map_info *map, unsigned long to,
 {
 	unsigned char *f = (unsigned char *)from;
 	unsigned char *t = (unsigned char *)map->virt + to;
-	unsigned long flags;
 
-	spin_lock_irqsave(&ebu_lock, flags);
+	mutex_lock(&ebu_mutex);
 	while (len--)
 		*t++ = *f++;
-	spin_unlock_irqrestore(&ebu_lock, flags);
+	mutex_unlock(&ebu_mutex);
 }
 
 static int

@@ -309,9 +309,8 @@ int falcon_sflash_xfer(struct spi_device *spi, struct spi_transfer *t,
 static int falcon_sflash_setup(struct spi_device *spi)
 {
 	unsigned int i;
-	unsigned long flags;
 
-	spin_lock_irqsave(&ebu_lock, flags);
+	mutex_lock(&ebu_mutex);
 
 	if (spi->max_speed_hz >= CLOCK_100M) {
 		/* set EBU clock to 100 MHz */
@@ -348,7 +347,7 @@ static int falcon_sflash_setup(struct spi_device *spi)
 	/* set address wrap around to maximum for 24-bit addresses */
 	ltq_ebu_w32_mask(SFCON_DEV_SIZE_MASK, SFCON_DEV_SIZE_A23_0, SFCON);
 
-	spin_unlock_irqrestore(&ebu_lock, flags);
+	mutex_unlock(&ebu_mutex);
 
 	return 0;
 }
@@ -359,7 +358,6 @@ static int falcon_sflash_xfer_one(struct spi_master *master,
 	struct falcon_sflash *priv = spi_master_get_devdata(master);
 	struct spi_transfer *t;
 	unsigned long spi_flags;
-	unsigned long flags;
 	int ret = 0;
 
 	priv->sfcmd = 0;
@@ -370,9 +368,9 @@ static int falcon_sflash_xfer_one(struct spi_master *master,
 		if (list_is_last(&t->transfer_list, &m->transfers))
 			spi_flags |= FALCON_SPI_XFER_END;
 
-		spin_lock_irqsave(&ebu_lock, flags);
+		mutex_lock(&ebu_mutex);
 		ret = falcon_sflash_xfer(m->spi, t, spi_flags);
-		spin_unlock_irqrestore(&ebu_lock, flags);
+		mutex_unlock(&ebu_mutex);
 
 		if (ret)
 			break;

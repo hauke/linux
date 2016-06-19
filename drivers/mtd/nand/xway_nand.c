@@ -86,16 +86,14 @@ static void xway_writeb(struct mtd_info *mtd, int op, u8 value)
 
 static void xway_select_chip(struct mtd_info *mtd, int chip)
 {
-	static unsigned long csflags;
-
 	switch (chip) {
 	case -1:
 		ltq_ebu_w32_mask(NAND_CON_CE, 0, EBU_NAND_CON);
 		ltq_ebu_w32_mask(NAND_CON_NANDM, 0, EBU_NAND_CON);
-		spin_unlock_irqrestore(&ebu_lock, csflags);
+		mutex_unlock(&ebu_mutex);
 		break;
 	case 0:
-		spin_lock_irqsave(&ebu_lock, csflags);
+		mutex_lock(&ebu_mutex);
 		ltq_ebu_w32_mask(0, NAND_CON_NANDM, EBU_NAND_CON);
 		ltq_ebu_w32_mask(0, NAND_CON_CE, EBU_NAND_CON);
 		break;
