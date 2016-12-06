@@ -828,31 +828,11 @@ static int intel_ssc_spi_transfer_one_message(struct spi_master *master,
 	struct spi_transfer *t;
 	int status;
 	unsigned int cs_change = 1;
-	unsigned int bits_per_word;
 
 	hw_setup_message(spi, spidev);
 
 	list_for_each_entry(t, &msg->transfers, transfer_list) {
 		reinit_completion(&spi->xfer_complete);
-
-		if (t->bits_per_word)
-			bits_per_word = t->bits_per_word;
-		else
-			bits_per_word = spidev->bits_per_word;
-
-		switch (bits_per_word) {
-		case 2 ... 8:
-		case 16:
-		case 24:
-		case 32:
-			/* This is supported by the chip */
-			break;
-		default:
-			dev_warn(spi->dev, "%i bits per word not supported\n",
-				 bits_per_word);
-			status = -EINVAL;
-			goto done;
-		}
 
 		hw_setup_transfer(spi, spidev, t);
 
