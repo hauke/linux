@@ -908,24 +908,6 @@ done:
 	return status;
 }
 
-static int intel_ssc_spi_prepare_transfer(struct spi_master *master)
-{
-	struct intel_ssc_spi *spi = spi_master_get_devdata(master);
-
-	pm_runtime_get_sync(spi->dev);
-
-	return 0;
-}
-
-static int intel_ssc_spi_unprepare_transfer(struct spi_master *master)
-{
-	struct intel_ssc_spi *spi = spi_master_get_devdata(master);
-
-	pm_runtime_put(spi->dev);
-
-	return 0;
-}
-
 static const struct intel_ssc_spi_hwcfg spi_xway = {
 	.irnen_r = SPI_IRNEN_R_XWAY,
 	.irnen_t = SPI_IRNEN_T_XWAY,
@@ -1048,9 +1030,7 @@ static int intel_ssc_spi_probe(struct platform_device *pdev)
 	master->num_chipselect = num_cs;
 	master->setup = intel_ssc_spi_setup;
 	master->cleanup = intel_ssc_spi_cleanup;
-	master->prepare_transfer_hardware = intel_ssc_spi_prepare_transfer;
 	master->transfer_one_message = intel_ssc_spi_transfer_one_message;
-	master->unprepare_transfer_hardware = intel_ssc_spi_unprepare_transfer;
 	master->mode_bits = SPI_CPOL | SPI_CPHA | SPI_LSB_FIRST | SPI_CS_HIGH |
 				SPI_LOOP;
 
