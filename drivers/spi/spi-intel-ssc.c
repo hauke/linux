@@ -342,6 +342,8 @@ static void hw_setup_clock_mode(const struct intel_ssc_spi *spi,
 
 static void intel_ssc_spi_hw_init(const struct intel_ssc_spi *spi)
 {
+	const struct intel_ssc_spi_hwcfg *hwcfg = spi->hwcfg;
+
 	/*
 	 * Set clock divider for run mode to 1 to
 	 * run at same frequency as FPI bus
@@ -351,8 +353,9 @@ static void intel_ssc_spi_hw_init(const struct intel_ssc_spi *spi)
 	/* Put controller into config mode */
 	hw_enter_config_mode(spi);
 
-	/* Disable all interrupts */
-	intel_ssc_spi_writel(spi, 0, SPI_IRNEN);
+	/* Enable interrupts */
+	intel_ssc_spi_writel(spi, hwcfg->irnen_t | hwcfg->irnen_r | SPI_IRNEN_E,
+			     SPI_IRNEN);
 
 	/* Clear error flags */
 	intel_ssc_spi_maskl(spi, 0, SPI_WHBSTATE_CLR_ERRORS, SPI_WHBSTATE);
@@ -504,15 +507,9 @@ static void intel_ssc_spi_cleanup(struct spi_device *spidev)
 static void hw_setup_message(const struct intel_ssc_spi *spi,
 				struct spi_device *spidev)
 {
-	const struct intel_ssc_spi_hwcfg *hwcfg = spi->hwcfg;
-
 	hw_enter_config_mode(spi);
 	hw_setup_clock_mode(spi, spidev->mode);
 	hw_enter_active_mode(spi);
-
-	/* Enable interrupts */
-	intel_ssc_spi_writel(spi, hwcfg->irnen_t | hwcfg->irnen_r | SPI_IRNEN_E,
-			     SPI_IRNEN);
 }
 
 static void hw_setup_transfer(struct intel_ssc_spi *spi,
@@ -559,9 +556,6 @@ static void hw_setup_transfer(struct intel_ssc_spi *spi,
 
 static void hw_finish_message(const struct intel_ssc_spi *spi)
 {
-	/* Disable interrupts */
-	intel_ssc_spi_writel(spi, 0, SPI_IRNEN);
-
 	/* Disable transmitter and receiver */
 	intel_ssc_spi_maskl(spi, 0, SPI_CON_TXOFF | SPI_CON_RXOFF, SPI_CON);
 }
@@ -754,9 +748,6 @@ static irqreturn_t intel_ssc_spi_err_interrupt(int irq, void *data)
 		dev_err(spi->dev, "transmit overflow error\n");
 	if (stat & SPI_STAT_ME)
 		dev_err(spi->dev, "mode error\n");
-
-	/* Disable all interrupts */
-	intel_ssc_spi_writel(spi, 0, SPI_IRNEN);
 
 	/* Clear error flags */
 	intel_ssc_spi_maskl(spi, 0, SPI_WHBSTATE_CLR_ERRORS, SPI_WHBSTATE);
