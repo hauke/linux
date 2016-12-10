@@ -1112,7 +1112,7 @@ static int intel_ssc_spi_probe(struct platform_device *pdev)
 	master->transfer_one = intel_ssc_transfer_one;
 	master->check_finished = intel_ssc_check_finished;
 	master->cleanup = intel_ssc_spi_cleanup;
-	master->transfer_one_message = intel_ssc_spi_transfer_one_message;
+//	master->transfer_one_message = intel_ssc_spi_transfer_one_message;
 	master->mode_bits = SPI_CPOL | SPI_CPHA | SPI_LSB_FIRST | SPI_CS_HIGH |
 				SPI_LOOP;
 
