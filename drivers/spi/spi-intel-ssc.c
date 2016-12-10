@@ -828,6 +828,16 @@ static void intel_ssc_set_cs(struct spi_device *spi, bool enable)
 		chipselect_disable(spi);
 }
 
+static int intel_ssc_transfer_one(struct spi_master *master, struct spi_device *spidev,
+				  struct spi_transfer *t)
+{
+	struct intel_ssc_spi *spi = spi_master_get_devdata(master);
+
+	hw_setup_transfer(spi, spidev, t);
+
+	return transfer_start(spi, spidev, t);		
+}
+
 static int intel_ssc_spi_transfer_one_message(struct spi_master *master,
 					      struct spi_message *msg)
 {
@@ -844,11 +854,9 @@ static int intel_ssc_spi_transfer_one_message(struct spi_master *master,
 	list_for_each_entry(t, &msg->transfers, transfer_list) {
 		reinit_completion(&spi->xfer_complete);
 
-		hw_setup_transfer(spi, spidev, t);
-
 		cs_change = t->cs_change;
 
-		status = transfer_start(spi, spidev, t);
+		status = intel_ssc_transfer_one(master, spidev, t);
 		if (status) {
 			dev_err(spi->dev, "failed to start transfer\n");
 			goto done;
@@ -1017,6 +1025,7 @@ static int intel_ssc_spi_probe(struct platform_device *pdev)
 	master->num_chipselect = num_cs;
 	master->setup = intel_ssc_spi_setup;
 	master->set_cs = intel_ssc_set_cs;
+	master->transfer_one = intel_ssc_transfer_one;
 	master->cleanup = intel_ssc_spi_cleanup;
 	master->transfer_one_message = intel_ssc_spi_transfer_one_message;
 	master->mode_bits = SPI_CPOL | SPI_CPHA | SPI_LSB_FIRST | SPI_CS_HIGH |
