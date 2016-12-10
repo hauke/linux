@@ -809,7 +809,7 @@ static int transfer_wait_finished(struct intel_ssc_spi *spi)
 	do {
 		if (!hw_is_busy(spi))
 			return 0;
-
+printk("was bussy\n");
 		cond_resched();
 	} while (!time_after_eq(jiffies, timeout));
 
