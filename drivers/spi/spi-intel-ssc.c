@@ -794,6 +794,27 @@ static int transfer_start(struct intel_ssc_spi *spi, struct spi_device *spidev,
 	return 0;
 }
 
+static int intel_ssc_check_finished(struct spi_master *master)
+{
+	struct intel_ssc_spi *spi = spi_master_get_devdata(master);
+	unsigned long timeout;
+
+	/* make sure that HW is idle */
+	timeout = jiffies + msecs_to_jiffies(spi->timeout);
+	do {
+		if (!hw_is_busy(spi))
+			return 0;
+
+		cond_resched();
+	} while (!time_after_eq(jiffies, timeout));
+
+	/* flush FIFOs on timeout */
+	rx_fifo_flush(spi);
+	tx_fifo_flush(spi);
+
+	return -EIO;
+}
+	
 static int transfer_wait_finished(struct intel_ssc_spi *spi)
 {
 	unsigned long timeout;
@@ -804,20 +825,7 @@ static int transfer_wait_finished(struct intel_ssc_spi *spi)
 	if (!timeout)
 		return -EIO;
 
-	/* make sure that HW is idle */
-	timeout = jiffies + msecs_to_jiffies(spi->timeout);
-	do {
-		if (!hw_is_busy(spi))
-			return 0;
-printk("was bussy\n");
-		cond_resched();
-	} while (!time_after_eq(jiffies, timeout));
-
-	/* flush FIFOs on timeout */
-	rx_fifo_flush(spi);
-	tx_fifo_flush(spi);
-
-	return -EIO;
+	return intel_ssc_check_finished(spi->master);
 }
 
 static void intel_ssc_set_cs(struct spi_device *spi, bool enable)
@@ -1026,6 +1034,7 @@ static int intel_ssc_spi_probe(struct platform_device *pdev)
 	master->setup = intel_ssc_spi_setup;
 	master->set_cs = intel_ssc_set_cs;
 	master->transfer_one = intel_ssc_transfer_one;
+	master->check_finished = intel_ssc_check_finished;
 	master->cleanup = intel_ssc_spi_cleanup;
 	master->transfer_one_message = intel_ssc_spi_transfer_one_message;
 	master->mode_bits = SPI_CPOL | SPI_CPHA | SPI_LSB_FIRST | SPI_CS_HIGH |
