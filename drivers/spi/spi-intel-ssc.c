@@ -820,6 +820,14 @@ printk("was bussy\n");
 	return -EIO;
 }
 
+static void intel_ssc_set_cs(struct spi_device *spi, bool enable)
+{
+	if (enable)
+		chipselect_enable(spi);
+	else
+		chipselect_disable(spi);
+}
+
 static int intel_ssc_spi_transfer_one_message(struct spi_master *master,
 					      struct spi_message *msg)
 {
@@ -1008,6 +1016,7 @@ static int intel_ssc_spi_probe(struct platform_device *pdev)
 	master->bus_num = 0;
 	master->num_chipselect = num_cs;
 	master->setup = intel_ssc_spi_setup;
+	master->set_cs = intel_ssc_set_cs;
 	master->cleanup = intel_ssc_spi_cleanup;
 	master->transfer_one_message = intel_ssc_spi_transfer_one_message;
 	master->mode_bits = SPI_CPOL | SPI_CPHA | SPI_LSB_FIRST | SPI_CS_HIGH |
