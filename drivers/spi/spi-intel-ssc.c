@@ -377,18 +377,6 @@ static void intel_ssc_spi_hw_init(const struct intel_ssc_spi *spi)
 	tx_fifo_reset(spi);
 }
 
-static void hw_chipselect_set(struct intel_ssc_spi *spi, unsigned int cs)
-{
-	u32 fgpo = (1 << (cs - spi->base_cs + SPI_FGPO_SETOUTN_S));
-	intel_ssc_spi_writel(spi, fgpo, SPI_FPGO);
-}
-
-static void hw_chipselect_clear(struct intel_ssc_spi *spi, unsigned int cs)
-{
-	u32 fgpo = (1 << (cs - spi->base_cs));
-	intel_ssc_spi_writel(spi, fgpo, SPI_FPGO);
-}
-
 static void hw_chipselect_init(struct intel_ssc_spi *spi, unsigned int cs,
 			       unsigned int cs_high)
 {
@@ -422,7 +410,6 @@ static int intel_ssc_spi_setup(struct spi_device *spidev)
 
 		hw_chipselect_init(spi, spidev->chip_select,
 			spidev->mode & SPI_CS_HIGH);
-		hw_chipselect_set(spi, spidev->chip_select);
 	}
 
 	return 0;
@@ -762,11 +749,15 @@ static void intel_ssc_handle_err(struct spi_master *master,
 static void intel_ssc_set_cs(struct spi_device *spidev, bool enable)
 {
 	struct intel_ssc_spi *spi = spi_master_get_devdata(spidev->master);
+	unsigned int cs = spidev->chip_select;
+	u32 fgpo;
 
 	if (!!(spidev->mode & SPI_CS_HIGH) == enable)
-		hw_chipselect_clear(spi, spidev->chip_select);
+		fgpo = (1 << (cs - spi->base_cs));
 	else
-		hw_chipselect_set(spi, spidev->chip_select);
+		fgpo = (1 << (cs - spi->base_cs + SPI_FGPO_SETOUTN_S));
+
+	intel_ssc_spi_writel(spi, fgpo, SPI_FPGO);
 }
 
 static int intel_ssc_transfer_one(struct spi_master *master, struct spi_device *spidev,
