@@ -936,11 +936,14 @@ static int intel_ssc_spi_transfer_one_message(struct spi_master *master,
 	}
 
 out:
+	if (ret != 0 || !keep_cs)
+		chipselect_disable(spidev);
+
 	if (msg->status == -EINPROGRESS)
 		msg->status = ret;
 
-	if (ret != 0 || !keep_cs)
-		chipselect_disable(spidev);
+	if (msg->status && master->handle_err)
+		master->handle_err(master, msg);
 
 	spi_res_release(master, msg);
 
