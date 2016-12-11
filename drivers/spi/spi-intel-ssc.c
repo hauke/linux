@@ -730,6 +730,7 @@ static int intel_ssc_check_finished(struct spi_master *master, unsigned long tim
 		if (!hw_is_busy(spi))
 			return 0;
 
+printk("hardware still bussy\n");
 		cond_resched();
 	} while (!time_after_eq(jiffies, end));
 
