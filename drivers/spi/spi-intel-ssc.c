@@ -729,6 +729,7 @@ static irqreturn_t intel_ssc_spi_xmit_interrupt(int irq, void *data)
 completed:
 	spi->status = 0;
 	complete(&spi->xfer_complete);
+	spi_finalize_current_transfer(spi->master);
 
 	return IRQ_HANDLED;
 }
@@ -759,6 +760,7 @@ static irqreturn_t intel_ssc_spi_err_interrupt(int irq, void *data)
 	/* set bad status so it can be retried */
 	spi->status = -EIO;
 	complete(&spi->xfer_complete);
+	spi_finalize_current_transfer(spi->master);
 
 	return IRQ_HANDLED;
 }
