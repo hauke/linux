@@ -793,7 +793,7 @@ static int transfer_start(struct intel_ssc_spi *spi, struct spi_device *spidev,
 
 	spin_unlock_irqrestore(&spi->lock, flags);
 
-	return 0;
+	return t->len;
 }
 
 static int intel_ssc_check_finished(struct spi_master *master)
@@ -874,7 +874,7 @@ static int intel_ssc_spi_transfer_one_message(struct spi_master *master,
 		cs_change = t->cs_change;
 
 		status = intel_ssc_transfer_one(master, spidev, t);
-		if (status) {
+		if (status < 0) {
 			dev_err(spi->dev, "failed to start transfer\n");
 			goto done;
 		}
