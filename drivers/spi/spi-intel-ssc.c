@@ -404,20 +404,6 @@ static void hw_chipselect_init(struct intel_ssc_spi *spi, unsigned int cs,
 	intel_ssc_spi_maskl(spi, 0, gpocon, SPI_GPOCON);
 }
 
-static void chipselect_enable(struct spi_device *spidev)
-{
-	struct intel_ssc_spi *spi = spi_master_get_devdata(spidev->master);
-
-	hw_chipselect_clear(spi, spidev->chip_select);
-}
-
-static void chipselect_disable(struct spi_device *spidev)
-{
-	struct intel_ssc_spi *spi = spi_master_get_devdata(spidev->master);
-
-	hw_chipselect_set(spi, spidev->chip_select);
-}
-
 static int intel_ssc_spi_setup(struct spi_device *spidev)
 {
 	struct spi_master *master = spidev->master;
@@ -773,12 +759,14 @@ static void intel_ssc_handle_err(struct spi_master *master,
 	tx_fifo_flush(spi);
 }
 	
-static void intel_ssc_set_cs(struct spi_device *spi, bool enable)
+static void intel_ssc_set_cs(struct spi_device *spidev, bool enable)
 {
-	if (!!(spi->mode & SPI_CS_HIGH) == enable)
-		chipselect_enable(spi);
+	struct intel_ssc_spi *spi = spi_master_get_devdata(spidev->master);
+
+	if (!!(spidev->mode & SPI_CS_HIGH) == enable)
+		hw_chipselect_clear(spi, spidev->chip_select);
 	else
-		chipselect_disable(spi);
+		hw_chipselect_set(spi, spidev->chip_select);
 }
 
 static int intel_ssc_transfer_one(struct spi_master *master, struct spi_device *spidev,
