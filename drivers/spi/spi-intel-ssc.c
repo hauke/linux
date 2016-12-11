@@ -846,6 +846,15 @@ static int intel_ssc_transfer_one(struct spi_master *master, struct spi_device *
 	return transfer_start(spi, spidev, t);		
 }
 
+static int intel_ssc_prepare_message(struct spi_master *master,
+			       struct spi_message *message)
+{
+	struct intel_ssc_spi *spi = spi_master_get_devdata(master);
+
+	hw_setup_message(spi, message->spi);
+	return 0;
+}
+
 static int intel_ssc_spi_transfer_one_message(struct spi_master *master,
 					      struct spi_message *msg)
 {
@@ -854,8 +863,6 @@ static int intel_ssc_spi_transfer_one_message(struct spi_master *master,
 	struct spi_transfer *t;
 	int status;
 	unsigned int cs_change = 1;
-
-	hw_setup_message(spi, spidev);
 
 	chipselect_enable(spidev);
 
@@ -1033,6 +1040,7 @@ static int intel_ssc_spi_probe(struct platform_device *pdev)
 	master->num_chipselect = num_cs;
 	master->setup = intel_ssc_spi_setup;
 	master->set_cs = intel_ssc_set_cs;
+	master->prepare_message = intel_ssc_prepare_message;
 	master->transfer_one = intel_ssc_transfer_one;
 	master->check_finished = intel_ssc_check_finished;
 	master->cleanup = intel_ssc_spi_cleanup;
