@@ -866,6 +866,18 @@ static int intel_ssc_unprepare_message(struct spi_master *master,
 	return 0;
 }
 
+static void spi_set_cs(struct spi_device *spi, bool enable)
+{
+	if (spi->mode & SPI_CS_HIGH)
+		enable = !enable;
+
+	if (gpio_is_valid(spi->cs_gpio))
+		gpio_set_value(spi->cs_gpio, !enable);
+	else if (spi->master->set_cs)
+		spi->master->set_cs(spi, !enable);
+}
+
+
 static int intel_ssc_spi_transfer_one_message(struct spi_master *master,
 					      struct spi_message *msg)
 {
@@ -876,7 +888,7 @@ static int intel_ssc_spi_transfer_one_message(struct spi_master *master,
 	struct spi_statistics *statm = &master->statistics;
 	struct spi_statistics *stats = &msg->spi->statistics;
 
-	chipselect_enable(msg->spi);
+	spi_set_cs(msg->spi, true);
 
 	SPI_STATISTICS_INCREMENT_FIELD(statm, messages);
 	SPI_STATISTICS_INCREMENT_FIELD(stats, messages);
@@ -948,9 +960,9 @@ static int intel_ssc_spi_transfer_one_message(struct spi_master *master,
 					 &msg->transfers)) {
 				keep_cs = true;
 			} else {
-				chipselect_disable(msg->spi);
+				spi_set_cs(msg->spi, false);
 				udelay(10);
-				chipselect_enable(msg->spi);
+				spi_set_cs(msg->spi, true);
 			}
 		}
 
@@ -959,7 +971,7 @@ static int intel_ssc_spi_transfer_one_message(struct spi_master *master,
 
 out:
 	if (ret != 0 || !keep_cs)
-		chipselect_disable(msg->spi);
+		spi_set_cs(msg->spi, false);
 
 	if (msg->status == -EINPROGRESS)
 		msg->status = ret;
