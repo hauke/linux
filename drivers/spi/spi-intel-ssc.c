@@ -176,7 +176,6 @@ struct intel_ssc_spi {
 	unsigned int			bits_per_word;
 	unsigned int			speed_hz;
 	int				status;
-	unsigned long			timeout;
 	unsigned int			tx_fifo_size;
 	unsigned int			rx_fifo_size;
 	unsigned int			base_cs;
@@ -747,19 +746,19 @@ static int transfer_start(struct intel_ssc_spi *spi, struct spi_device *spidev,
 	return t->len;
 }
 
-static int intel_ssc_check_finished(struct spi_master *master)
+static int intel_ssc_check_finished(struct spi_master *master, unsigned long timeout)
 {
 	struct intel_ssc_spi *spi = spi_master_get_devdata(master);
-	unsigned long timeout;
+	unsigned long end;
 
 	/* make sure that HW is idle */
-	timeout = jiffies + msecs_to_jiffies(spi->timeout);
+	end = jiffies + timeout;
 	do {
 		if (!hw_is_busy(spi))
 			return 0;
 
 		cond_resched();
-	} while (!time_after_eq(jiffies, timeout));
+	} while (!time_after_eq(jiffies, end));
 
 	return -EIO;
 }
@@ -904,7 +903,6 @@ static int intel_ssc_spi_probe(struct platform_device *pdev)
 	of_property_read_u32(pdev->dev.of_node, "base-cs", &spi->base_cs);
 
 	spin_lock_init(&spi->lock);
-	spi->timeout = 2000;
 	spi->bits_per_word = 8;
 	spi->speed_hz = 0;
 

@@ -548,7 +548,7 @@ struct spi_master {
 			    struct spi_transfer *transfer);
 	void (*handle_err)(struct spi_master *master,
 			   struct spi_message *message);
-	int (*check_finished)(struct spi_master *master);
+	int (*check_finished)(struct spi_master *master, unsigned long timeout);
 
 	/* gpio chip select */
 	int			*cs_gpios;
