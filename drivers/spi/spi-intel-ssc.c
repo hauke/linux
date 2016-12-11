@@ -183,10 +183,6 @@ struct intel_ssc_spi {
 	unsigned int			base_cs;
 };
 
-struct intel_ssc_spi_cstate {
-	int cs_gpio;
-};
-
 static u32 intel_ssc_spi_readl(const struct intel_ssc_spi *spi, u32 reg)
 {
 	return __raw_readl(spi->regbase + reg);
@@ -404,8 +400,8 @@ static void hw_chipselect_init(struct intel_ssc_spi *spi, unsigned int cs,
 	gpocon = 1 << ((cs - spi->base_cs) + SPI_GPOCON_ISCSBN_S);
 
 	/* invert GPO pin */
-//	if (cs_high)
-//		gpocon |= 1 << (cs - spi->base_cs);
+	if (cs_high)
+		gpocon |= 1 << (cs - spi->base_cs);
 
 	intel_ssc_spi_maskl(spi, 0, gpocon, SPI_GPOCON);
 }
@@ -413,12 +409,8 @@ static void hw_chipselect_init(struct intel_ssc_spi *spi, unsigned int cs,
 static void chipselect_enable(struct spi_device *spidev)
 {
 	struct intel_ssc_spi *spi = spi_master_get_devdata(spidev->master);
-	struct intel_ssc_spi_cstate *cstate = spi_get_ctldata(spidev);
 
-	if (cstate->cs_gpio >= 0)
-		gpio_set_value(cstate->cs_gpio, spidev->mode & SPI_CS_HIGH);
-	else
-		hw_chipselect_clear(spi, spidev->chip_select);
+	hw_chipselect_clear(spi, spidev->chip_select);
 
 	/* CS setup/recovery time */
 	if (spi->cs_delay)
@@ -428,16 +420,12 @@ static void chipselect_enable(struct spi_device *spidev)
 static void chipselect_disable(struct spi_device *spidev)
 {
 	struct intel_ssc_spi *spi = spi_master_get_devdata(spidev->master);
-	struct intel_ssc_spi_cstate *cstate = spi_get_ctldata(spidev);
 
 	/* CS hold time */
 	if (spi->cs_delay)
 		ndelay(spi->cs_delay);
 
-	if (cstate->cs_gpio >= 0)
-		gpio_set_value(cstate->cs_gpio, !(spidev->mode & SPI_CS_HIGH));
-	else
-		hw_chipselect_set(spi, spidev->chip_select);
+	hw_chipselect_set(spi, spidev->chip_select);
 
 	/* CS setup/recovery time */
 	if (spi->cs_delay)
@@ -448,42 +436,15 @@ static int intel_ssc_spi_setup(struct spi_device *spidev)
 {
 	struct spi_master *master = spidev->master;
 	struct intel_ssc_spi *spi = spi_master_get_devdata(master);
-	struct intel_ssc_spi_cstate *cstate = spi_get_ctldata(spidev);
-	int err;
 
-	if (cstate)
-		return 0;
-
-	cstate = kzalloc(sizeof(*cstate), GFP_KERNEL);
-	if (!cstate)
-		return -ENOMEM;
-
-	spi_set_ctldata(spidev, cstate);
-	cstate->cs_gpio = -ENOENT;
-
-	if (spidev->cs_gpio >= 0) {
-		dev_dbg(spi->dev, "using chipselect %u on GPIO %d\n",
-			spidev->chip_select, spidev->cs_gpio);
-
-		err = gpio_request(spidev->cs_gpio, dev_name(spi->dev));
-		if (err)
-			return err;
-
-		gpio_direction_output(spidev->cs_gpio,
-			!(spidev->mode & SPI_CS_HIGH));
-
-		cstate->cs_gpio = spidev->cs_gpio;
-	} else {
+	if (!gpio_is_valid(spidev->cs_gpio)) {
 		dev_dbg(spi->dev, "using internal chipselect %u\n",
 			spidev->chip_select);
 
-		if (spidev->chip_select < spi->base_cs ||
-		    spidev->chip_select >= spi->base_cs +
-					   master->num_chipselect) {
+		if (spidev->chip_select < spi->base_cs) {
 			dev_err(spi->dev,
-				"chipselect %i out of range (%i - %i)\n",
-				spidev->chip_select, spi->base_cs,
-				spi->base_cs + master->num_chipselect);
+				"chipselect %i too small (min %i)\n",
+				spidev->chip_select, spi->base_cs);
 			return -EINVAL;
 		}
 
@@ -497,13 +458,7 @@ static int intel_ssc_spi_setup(struct spi_device *spidev)
 
 static void intel_ssc_spi_cleanup(struct spi_device *spidev)
 {
-	struct intel_ssc_spi_cstate *cstate = spi_get_ctldata(spidev);
 
-	if (cstate->cs_gpio >= 0)
-		gpio_free(cstate->cs_gpio);
-
-	kfree(cstate);
-	spi_set_ctldata(spidev, NULL);
 }
 
 static int intel_ssc_prepare_message(struct spi_master *master,
