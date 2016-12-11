@@ -1013,9 +1013,6 @@ static int spi_transfer_one_message(struct spi_master *master,
 								 msecs_to_jiffies(ms));
 				if (master->check_finished)
 					master->check_finished(master);
-			} else {
-				dev_err(&msg->spi->dev,
-					"SPI transfer empty: %d\n", ret);
 			}
 
 			if (ms == 0) {
