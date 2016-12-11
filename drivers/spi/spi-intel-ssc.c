@@ -165,7 +165,6 @@ struct intel_ssc_spi {
 	const struct intel_ssc_spi_hwcfg	*hwcfg;
 
 	spinlock_t			lock;
-	struct completion		xfer_complete;
 
 	const u8			*tx;
 	u8				*rx;
@@ -728,7 +727,6 @@ static irqreturn_t intel_ssc_spi_xmit_interrupt(int irq, void *data)
 
 completed:
 	spi->status = 0;
-	complete(&spi->xfer_complete);
 	spi_finalize_current_transfer(spi->master);
 
 	return IRQ_HANDLED;
@@ -759,7 +757,6 @@ static irqreturn_t intel_ssc_spi_err_interrupt(int irq, void *data)
 
 	/* set bad status so it can be retried */
 	spi->status = -EIO;
-	complete(&spi->xfer_complete);
 	spi_finalize_current_transfer(spi->master);
 
 	return IRQ_HANDLED;
@@ -822,7 +819,7 @@ static int transfer_wait_finished(struct intel_ssc_spi *spi)
 	unsigned long timeout;
 
 	/* wait for completion by interrupt */
-	timeout = wait_for_completion_timeout(&spi->xfer_complete,
+	timeout = wait_for_completion_timeout(&spi->master->xfer_completion,
 			msecs_to_jiffies(spi->timeout));
 	if (!timeout)
 		return -EIO;
@@ -878,7 +875,7 @@ static int intel_ssc_spi_transfer_one_message(struct spi_master *master,
 	chipselect_enable(spidev);
 
 	list_for_each_entry(xfer, &msg->transfers, transfer_list) {
-		reinit_completion(&spi->xfer_complete);
+		reinit_completion(&master->xfer_completion);
 
 		ret = intel_ssc_transfer_one(master, spidev, xfer);
 		if (ret < 0) {
@@ -1042,7 +1039,6 @@ static int intel_ssc_spi_probe(struct platform_device *pdev)
 	spi->base_cs = 1;
 	of_property_read_u32(pdev->dev.of_node, "base-cs", &spi->base_cs);
 
-	init_completion(&spi->xfer_complete);
 	spin_lock_init(&spi->lock);
 	spi->timeout = 2000;
 	spi->cs_delay = 100;
