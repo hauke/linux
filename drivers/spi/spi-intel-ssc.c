@@ -242,11 +242,7 @@ static void tx_fifo_flush(const struct intel_ssc_spi *spi)
 	intel_ssc_spi_maskl(spi, 0, SPI_TXFCON_TXFLU, SPI_TXFCON);
 }
 
-static int hw_is_busy(const struct intel_ssc_spi *spi)
-{
-	u32 stat = intel_ssc_spi_readl(spi, SPI_STAT);
-	return stat & SPI_STAT_BSY;
-}
+
 
 static void hw_enter_config_mode(const struct intel_ssc_spi *spi)
 {
@@ -727,7 +723,8 @@ static int intel_ssc_check_finished(struct spi_master *master, unsigned long tim
 	/* make sure that HW is idle */
 	end = jiffies + timeout;
 	do {
-		if (!hw_is_busy(spi))
+		u32 stat = intel_ssc_spi_readl(spi, SPI_STAT);
+		if (!(stat & SPI_STAT_BSY))
 			return 0;
 
 		cond_resched();
