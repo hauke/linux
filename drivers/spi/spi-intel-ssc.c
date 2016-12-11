@@ -834,7 +834,7 @@ static void intel_ssc_handle_err(struct spi_master *master,
 	
 static void intel_ssc_set_cs(struct spi_device *spi, bool enable)
 {
-	if (!enable)
+	if (!!(spi->mode & SPI_CS_HIGH) == enable)
 		chipselect_enable(spi);
 	else
 		chipselect_disable(spi);
