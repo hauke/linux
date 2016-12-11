@@ -567,7 +567,7 @@ static void rx_request(struct intel_ssc_spi *spi)
 	 * depends on the FIFO size implemented in hardware.
 	 */
 	rxreq = spi->rx_todo;
-	rxreq_max = spi->rx_fifo_size;
+	rxreq_max = spi->rx_fifo_size * 4;
 	if (rxreq > rxreq_max)
 		rxreq = rxreq_max;
 
