@@ -177,7 +177,6 @@ struct intel_ssc_spi {
 	unsigned int			speed_hz;
 	int				status;
 	unsigned long			timeout;
-	unsigned int			cs_delay;
 	unsigned int			tx_fifo_size;
 	unsigned int			rx_fifo_size;
 	unsigned int			base_cs;
@@ -411,25 +410,13 @@ static void chipselect_enable(struct spi_device *spidev)
 	struct intel_ssc_spi *spi = spi_master_get_devdata(spidev->master);
 
 	hw_chipselect_clear(spi, spidev->chip_select);
-
-	/* CS setup/recovery time */
-	if (spi->cs_delay)
-		ndelay(spi->cs_delay);
 }
 
 static void chipselect_disable(struct spi_device *spidev)
 {
 	struct intel_ssc_spi *spi = spi_master_get_devdata(spidev->master);
 
-	/* CS hold time */
-	if (spi->cs_delay)
-		ndelay(spi->cs_delay);
-
 	hw_chipselect_set(spi, spidev->chip_select);
-
-	/* CS setup/recovery time */
-	if (spi->cs_delay)
-		ndelay(spi->cs_delay);
 }
 
 static int intel_ssc_spi_setup(struct spi_device *spidev)
@@ -918,7 +905,6 @@ static int intel_ssc_spi_probe(struct platform_device *pdev)
 
 	spin_lock_init(&spi->lock);
 	spi->timeout = 2000;
-	spi->cs_delay = 100;
 	spi->bits_per_word = 8;
 	spi->speed_hz = 0;
 
