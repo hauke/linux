@@ -866,7 +866,6 @@ static int intel_ssc_unprepare_message(struct spi_master *master,
 static int intel_ssc_spi_transfer_one_message(struct spi_master *master,
 					      struct spi_message *msg)
 {
-	struct intel_ssc_spi *spi = spi_master_get_devdata(master);
 	struct spi_device *spidev = msg->spi;
 	struct spi_transfer *xfer;
 	int ret;
@@ -916,14 +915,6 @@ static int intel_ssc_spi_transfer_one_message(struct spi_master *master,
 					xfer->len);
 		}
 
-		ret = spi->status;
-		if (ret) {
-			dev_err(spi->dev, "transfer failed\n");
-			goto out;
-		}
-
-		msg->actual_length += xfer->len;
-
 		if (msg->status != -EINPROGRESS)
 			goto out;
 
@@ -940,6 +931,8 @@ static int intel_ssc_spi_transfer_one_message(struct spi_master *master,
 				chipselect_enable(spidev);
 			}
 		}
+
+		msg->actual_length += xfer->len;
 	}
 
 out:
