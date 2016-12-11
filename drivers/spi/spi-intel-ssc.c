@@ -345,10 +345,6 @@ static void intel_ssc_spi_hw_init(const struct intel_ssc_spi *spi)
 	/* Put controller into config mode */
 	hw_enter_config_mode(spi);
 
-	/* Enable interrupts */
-	intel_ssc_spi_writel(spi, hwcfg->irnen_t | hwcfg->irnen_r | SPI_IRNEN_E,
-			     SPI_IRNEN);
-
 	/* Clear error flags */
 	intel_ssc_spi_maskl(spi, 0, SPI_WHBSTATE_CLR_ERRORS, SPI_WHBSTATE);
 
@@ -371,49 +367,41 @@ static void intel_ssc_spi_hw_init(const struct intel_ssc_spi *spi)
 	/* Enable and flush FIFOs */
 	rx_fifo_reset(spi);
 	tx_fifo_reset(spi);
-}
 
-static void hw_chipselect_init(struct intel_ssc_spi *spi, unsigned int cs,
-			       unsigned int cs_high)
-{
-	u32 gpocon;
-
-	/* set GPO pin to CS mode */
-	gpocon = 1 << ((cs - spi->base_cs) + SPI_GPOCON_ISCSBN_S);
-
-	/* invert GPO pin */
-	if (cs_high)
-		gpocon |= 1 << (cs - spi->base_cs);
-
-	intel_ssc_spi_maskl(spi, 0, gpocon, SPI_GPOCON);
+	/* Enable interrupts */
+	intel_ssc_spi_writel(spi, hwcfg->irnen_t | hwcfg->irnen_r | SPI_IRNEN_E,
+			     SPI_IRNEN);
 }
 
 static int intel_ssc_spi_setup(struct spi_device *spidev)
 {
 	struct spi_master *master = spidev->master;
 	struct intel_ssc_spi *spi = spi_master_get_devdata(master);
+	unsigned int cs = spidev->chip_select;
+	u32 gpocon;
 
-	if (!gpio_is_valid(spidev->cs_gpio)) {
-		dev_dbg(spi->dev, "using internal chipselect %u\n",
-			spidev->chip_select);
+	/* GPIOs are used for CSS */
+	if (gpio_is_valid(spidev->cs_gpio))
+		return 0;
+		
+	dev_dbg(spi->dev, "using internal chipselect %u\n", cs);
 
-		if (spidev->chip_select < spi->base_cs) {
-			dev_err(spi->dev,
-				"chipselect %i too small (min %i)\n",
-				spidev->chip_select, spi->base_cs);
-			return -EINVAL;
-		}
-
-		hw_chipselect_init(spi, spidev->chip_select,
-			spidev->mode & SPI_CS_HIGH);
+	if (cs < spi->base_cs) {
+		dev_err(spi->dev,
+			"chipselect %i too small (min %i)\n", cs, spi->base_cs);
+		return -EINVAL;
 	}
 
+	/* set GPO pin to CS mode */
+	gpocon = 1 << ((cs - spi->base_cs) + SPI_GPOCON_ISCSBN_S);
+
+	/* invert GPO pin */
+	if (spidev->mode & SPI_CS_HIGH)
+		gpocon |= 1 << (cs - spi->base_cs);
+
+	intel_ssc_spi_maskl(spi, 0, gpocon, SPI_GPOCON);
+
 	return 0;
-}
-
-static void intel_ssc_spi_cleanup(struct spi_device *spidev)
-{
-
 }
 
 static int intel_ssc_prepare_message(struct spi_master *master,
@@ -620,10 +608,6 @@ static void rx_request(struct intel_ssc_spi *spi)
 static irqreturn_t intel_ssc_spi_xmit_interrupt(int irq, void *data)
 {
 	struct intel_ssc_spi *spi = data;
-
-	/* handle possible interrupts after device initialization */
-	if (!spi->rx && !spi->tx)
-		return IRQ_HANDLED;
 
 	if (spi->tx) {
 		if (spi->rx && spi->rx_todo)
@@ -892,8 +876,6 @@ static int intel_ssc_spi_probe(struct platform_device *pdev)
 	master->unprepare_message = intel_ssc_unprepare_message;
 	master->transfer_one = intel_ssc_transfer_one;
 	master->check_finished = intel_ssc_check_finished;
-	master->cleanup = intel_ssc_spi_cleanup;
-//	master->transfer_one_message = intel_ssc_spi_transfer_one_message;
 	master->mode_bits = SPI_CPOL | SPI_CPHA | SPI_LSB_FIRST | SPI_CS_HIGH |
 				SPI_LOOP;
 
