@@ -832,7 +832,7 @@ static int transfer_wait_finished(struct intel_ssc_spi *spi)
 
 static void intel_ssc_set_cs(struct spi_device *spi, bool enable)
 {
-	if (enable)
+	if (!enable)
 		chipselect_enable(spi);
 	else
 		chipselect_disable(spi);
