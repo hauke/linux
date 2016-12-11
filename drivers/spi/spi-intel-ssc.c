@@ -819,11 +819,17 @@ static int intel_ssc_check_finished(struct spi_master *master)
 		cond_resched();
 	} while (!time_after_eq(jiffies, timeout));
 
+	return -EIO;
+}
+
+static void intel_ssc_handle_err(struct spi_master *master,
+			   struct spi_message *message)
+{
+	struct intel_ssc_spi *spi = spi_master_get_devdata(master);
+
 	/* flush FIFOs on timeout */
 	rx_fifo_flush(spi);
 	tx_fifo_flush(spi);
-
-	return -EIO;
 }
 	
 static void intel_ssc_set_cs(struct spi_device *spi, bool enable)
@@ -966,6 +972,7 @@ static int intel_ssc_spi_probe(struct platform_device *pdev)
 	master->num_chipselect = num_cs;
 	master->setup = intel_ssc_spi_setup;
 	master->set_cs = intel_ssc_set_cs;
+	master->handle_err = intel_ssc_handle_err;
 	master->prepare_message = intel_ssc_prepare_message;
 	master->unprepare_message = intel_ssc_unprepare_message;
 	master->transfer_one = intel_ssc_transfer_one;
