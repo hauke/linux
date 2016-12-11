@@ -900,6 +900,9 @@ static int intel_ssc_spi_transfer_one_message(struct spi_master *master,
 
 		msg->actual_length += t->len;
 
+		if (msg->status != -EINPROGRESS)
+			goto done;
+
 		if (t->delay_usecs)
 			udelay(t->delay_usecs);
 
@@ -916,7 +919,8 @@ static int intel_ssc_spi_transfer_one_message(struct spi_master *master,
 	}
 
 done:
-	msg->status = status;
+	if (msg->status == -EINPROGRESS)
+		msg->status = status;
 
 	if (status != 0 || !keep_cs)
 		chipselect_disable(spidev);
