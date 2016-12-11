@@ -243,7 +243,6 @@ static void tx_fifo_flush(const struct intel_ssc_spi *spi)
 }
 
 
-
 static void hw_enter_config_mode(const struct intel_ssc_spi *spi)
 {
 	intel_ssc_spi_writel(spi, SPI_WHBSTATE_CLREN, SPI_WHBSTATE);
@@ -558,48 +557,6 @@ static void rx_fifo_read_full_duplex(struct intel_ssc_spi *spi)
 	}
 }
 
-static void rx_fifo_read_half_duplex(struct intel_ssc_spi *spi)
-{
-	u32 data, *rx32;
-	u8 *rx8;
-	unsigned int rxbv, shift;
-	unsigned int rx_fill = rx_fifo_level(spi);
-
-	/*
-	 * In RX-only mode the bits per word value is ignored by HW. A value
-	 * of 32 is used instead. Thus all 4 bytes per FIFO must be read.
-	 * If remaining RX bytes are less than 4, the FIFO must be read
-	 * differently. The amount of received and valid bytes is indicated
-	 * by STAT.RXBV register value.
-	 */
-	while (rx_fill) {
-		if (spi->rx_todo < 4)  {
-			rxbv = (intel_ssc_spi_readl(spi, SPI_STAT) &
-				SPI_STAT_RXBV_M) >> SPI_STAT_RXBV_S;
-			data = intel_ssc_spi_readl(spi, SPI_RB);
-
-			shift = (rxbv - 1) * 8;
-			rx8 = spi->rx;
-
-			while (rxbv) {
-				*rx8++ = (data >> shift) & 0xFF;
-				rxbv--;
-				shift -= 8;
-				spi->rx_todo--;
-				spi->rx++;
-			}
-		} else {
-			data = intel_ssc_spi_readl(spi, SPI_RB);
-			rx32 = (u32 *) spi->rx;
-
-			*rx32++ = data;
-			spi->rx_todo -= 4;
-			spi->rx += 4;
-		}
-		rx_fill--;
-	}
-}
-
 static void rx_request(struct intel_ssc_spi *spi)
 {
 	unsigned int rxreq, rxreq_max;
@@ -621,29 +578,16 @@ static irqreturn_t intel_ssc_spi_xmit_interrupt(int irq, void *data)
 {
 	struct intel_ssc_spi *spi = data;
 
-	/* handle possible interrupts after device initialization */
-	if (!spi->rx && !spi->tx)
-		return IRQ_HANDLED;
+	if (spi->rx && spi->rx_todo)
+		rx_fifo_read_full_duplex(spi);
 
-	if (spi->tx) {
-		if (spi->rx && spi->rx_todo)
-			rx_fifo_read_full_duplex(spi);
+	if (spi->tx && spi->tx_todo)
+		tx_fifo_write(spi);
+	else if (spi->rx_todo)
+		rx_request(spi);
 
-		if (spi->tx_todo)
-			tx_fifo_write(spi);
-		else
-			goto completed;
-	} else if (spi->rx) {
-		if (spi->rx_todo) {
-			rx_fifo_read_half_duplex(spi);
-
-			if (spi->rx_todo)
-				rx_request(spi);
-			else
-				goto completed;
-		} else
-			goto completed;
-	}
+	if (!spi->rx_todo && !spi->rx_todo)
+		goto completed;
 
 	return IRQ_HANDLED;
 
