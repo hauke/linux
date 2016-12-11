@@ -1011,8 +1011,16 @@ static int spi_transfer_one_message(struct spi_master *master,
 
 				ms = wait_for_completion_timeout(&master->xfer_completion,
 								 msecs_to_jiffies(ms));
-				if (master->check_finished)
-					master->check_finished(master, ms);
+			}
+
+			if (master->check_finished) {
+				ret = master->check_finished(master, ms);
+				if (ret) {
+					dev_err(&msg->spi->dev,
+						"SPI transfer not finished: %i\n",
+						ret);
+					msg->status = ret;
+				}
 			}
 
 			if (ms == 0) {
