@@ -870,6 +870,7 @@ static int intel_ssc_spi_transfer_one_message(struct spi_master *master,
 	struct spi_device *spidev = msg->spi;
 	struct spi_transfer *xfer;
 	int ret;
+	unsigned long long ms = 1;
 	bool keep_cs = false;
 
 	chipselect_enable(spidev);
@@ -883,10 +884,27 @@ static int intel_ssc_spi_transfer_one_message(struct spi_master *master,
 			goto out;
 		}
 
-		ret = transfer_wait_finished(spi);
-		if (ret) {
-			dev_err(spi->dev, "transfer timeout\n");
-			goto out;
+		if (ret > 0) {
+			ret = 0;
+			ms = 8LL * 1000LL * xfer->len;
+			do_div(ms, xfer->speed_hz);
+			ms += ms + 100; /* some tolerance */
+
+			if (ms > UINT_MAX)
+				ms = UINT_MAX;
+
+			ms = wait_for_completion_timeout(&master->xfer_completion,
+							 msecs_to_jiffies(2000));
+			intel_ssc_check_finished(master);
+		} else {
+			dev_err(&msg->spi->dev,
+				"SPI transfer empty: %d\n", ret);
+		}
+
+		if (ms == 0) {
+			dev_err(&msg->spi->dev,
+				"SPI transfer timed out\n");
+			msg->status = -ETIMEDOUT;
 		}
 
 		ret = spi->status;
