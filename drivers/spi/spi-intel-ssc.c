@@ -876,35 +876,44 @@ static int intel_ssc_spi_transfer_one_message(struct spi_master *master,
 	chipselect_enable(spidev);
 
 	list_for_each_entry(xfer, &msg->transfers, transfer_list) {
-		reinit_completion(&master->xfer_completion);
+		if (xfer->tx_buf || xfer->rx_buf) {
+			reinit_completion(&master->xfer_completion);
 
-		ret = intel_ssc_transfer_one(master, spidev, xfer);
-		if (ret < 0) {
-			dev_err(spi->dev, "failed to start transfer\n");
-			goto out;
-		}
+			ret = master->transfer_one(master, msg->spi, xfer);
+			if (ret < 0) {
+				dev_err(&msg->spi->dev,
+					"SPI transfer failed: %d\n", ret);
+				goto out;
+			}
 
-		if (ret > 0) {
-			ret = 0;
-			ms = 8LL * 1000LL * xfer->len;
-			do_div(ms, xfer->speed_hz);
-			ms += ms + 100; /* some tolerance */
+			if (ret > 0) {
+				ret = 0;
+				ms = 8LL * 1000LL * xfer->len;
+				do_div(ms, xfer->speed_hz);
+				ms += ms + 100; /* some tolerance */
 
-			if (ms > UINT_MAX)
-				ms = UINT_MAX;
+				if (ms > UINT_MAX)
+					ms = UINT_MAX;
 
-			ms = wait_for_completion_timeout(&master->xfer_completion,
-							 msecs_to_jiffies(2000));
-			intel_ssc_check_finished(master);
+				ms = wait_for_completion_timeout(&master->xfer_completion,
+								 msecs_to_jiffies(2000));
+				if (master->check_finished)
+					master->check_finished(master);
+			} else {
+				dev_err(&msg->spi->dev,
+					"SPI transfer empty: %d\n", ret);
+			}
+
+			if (ms == 0) {
+				dev_err(&msg->spi->dev,
+					"SPI transfer timed out\n");
+				msg->status = -ETIMEDOUT;
+			}
 		} else {
-			dev_err(&msg->spi->dev,
-				"SPI transfer empty: %d\n", ret);
-		}
-
-		if (ms == 0) {
-			dev_err(&msg->spi->dev,
-				"SPI transfer timed out\n");
-			msg->status = -ETIMEDOUT;
+			if (xfer->len)
+				dev_err(&msg->spi->dev,
+					"Bufferless transfer has length %u\n",
+					xfer->len);
 		}
 
 		ret = spi->status;
