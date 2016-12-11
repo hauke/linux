@@ -871,43 +871,43 @@ static int intel_ssc_spi_transfer_one_message(struct spi_master *master,
 {
 	struct intel_ssc_spi *spi = spi_master_get_devdata(master);
 	struct spi_device *spidev = msg->spi;
-	struct spi_transfer *t;
-	int status;
+	struct spi_transfer *xfer;
+	int ret;
 	bool keep_cs = false;
 
 	chipselect_enable(spidev);
 
-	list_for_each_entry(t, &msg->transfers, transfer_list) {
+	list_for_each_entry(xfer, &msg->transfers, transfer_list) {
 		reinit_completion(&spi->xfer_complete);
 
-		status = intel_ssc_transfer_one(master, spidev, t);
-		if (status < 0) {
+		ret = intel_ssc_transfer_one(master, spidev, xfer);
+		if (ret < 0) {
 			dev_err(spi->dev, "failed to start transfer\n");
-			goto done;
+			goto out;
 		}
 
-		status = transfer_wait_finished(spi);
-		if (status) {
+		ret = transfer_wait_finished(spi);
+		if (ret) {
 			dev_err(spi->dev, "transfer timeout\n");
-			goto done;
+			goto out;
 		}
 
-		status = spi->status;
-		if (status) {
+		ret = spi->status;
+		if (ret) {
 			dev_err(spi->dev, "transfer failed\n");
-			goto done;
+			goto out;
 		}
 
-		msg->actual_length += t->len;
+		msg->actual_length += xfer->len;
 
 		if (msg->status != -EINPROGRESS)
-			goto done;
+			goto out;
 
-		if (t->delay_usecs)
-			udelay(t->delay_usecs);
+		if (xfer->delay_usecs)
+			udelay(xfer->delay_usecs);
 
-		if (t->cs_change) {
-			if (list_is_last(&t->transfer_list,
+		if (xfer->cs_change) {
+			if (list_is_last(&xfer->transfer_list,
 					 &msg->transfers)) {
 				keep_cs = true;
 			} else {
@@ -918,18 +918,18 @@ static int intel_ssc_spi_transfer_one_message(struct spi_master *master,
 		}
 	}
 
-done:
+out:
 	if (msg->status == -EINPROGRESS)
-		msg->status = status;
+		msg->status = ret;
 
-	if (status != 0 || !keep_cs)
+	if (ret != 0 || !keep_cs)
 		chipselect_disable(spidev);
 
 	spi_res_release(master, msg);
 
 	spi_finalize_current_message(master);
 
-	return status;
+	return ret;
 }
 
 static const struct intel_ssc_spi_hwcfg spi_xway = {
