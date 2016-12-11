@@ -923,6 +923,8 @@ done:
 	if (!(status == 0 && cs_change))
 		chipselect_disable(spidev);
 
+	spi_res_release(master, msg);
+
 	spi_finalize_current_message(master);
 
 	return status;
