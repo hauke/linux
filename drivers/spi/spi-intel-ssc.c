@@ -404,8 +404,8 @@ static void hw_chipselect_init(struct intel_ssc_spi *spi, unsigned int cs,
 	gpocon = 1 << ((cs - spi->base_cs) + SPI_GPOCON_ISCSBN_S);
 
 	/* invert GPO pin */
-	if (cs_high)
-		gpocon |= 1 << (cs - spi->base_cs);
+//	if (cs_high)
+//		gpocon |= 1 << (cs - spi->base_cs);
 
 	intel_ssc_spi_maskl(spi, 0, gpocon, SPI_GPOCON);
 }
