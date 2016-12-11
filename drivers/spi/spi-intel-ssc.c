@@ -873,14 +873,12 @@ static int intel_ssc_spi_transfer_one_message(struct spi_master *master,
 	struct spi_device *spidev = msg->spi;
 	struct spi_transfer *t;
 	int status;
-	unsigned int cs_change = 1;
+	bool keep_cs = false;
 
 	chipselect_enable(spidev);
 
 	list_for_each_entry(t, &msg->transfers, transfer_list) {
 		reinit_completion(&spi->xfer_complete);
-
-		cs_change = t->cs_change;
 
 		status = intel_ssc_transfer_one(master, spidev, t);
 		if (status < 0) {
@@ -905,10 +903,10 @@ static int intel_ssc_spi_transfer_one_message(struct spi_master *master,
 		if (t->delay_usecs)
 			udelay(t->delay_usecs);
 
-		if (cs_change) {
+		if (t->cs_change) {
 			if (list_is_last(&t->transfer_list,
 					 &msg->transfers)) {
-				cs_change = 1;
+				keep_cs = true;
 			} else {
 				chipselect_disable(spidev);
 				udelay(10);
@@ -920,7 +918,7 @@ static int intel_ssc_spi_transfer_one_message(struct spi_master *master,
 done:
 	msg->status = status;
 
-	if (!(status == 0 && cs_change))
+	if (status != 0 || !keep_cs)
 		chipselect_disable(spidev);
 
 	spi_res_release(master, msg);
