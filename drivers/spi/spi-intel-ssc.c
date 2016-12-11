@@ -24,6 +24,9 @@
 
 #include <lantiq_soc.h>
 
+#define CREATE_TRACE_POINTS
+#include <trace/events/spi.h>
+
 #define SPI_RX_IRQ_NAME		"spi_rx"
 #define SPI_TX_IRQ_NAME		"spi_tx"
 #define SPI_ERR_IRQ_NAME	"spi_err"
@@ -866,20 +869,33 @@ static int intel_ssc_unprepare_message(struct spi_master *master,
 static int intel_ssc_spi_transfer_one_message(struct spi_master *master,
 					      struct spi_message *msg)
 {
-	struct spi_device *spidev = msg->spi;
 	struct spi_transfer *xfer;
-	int ret;
-	unsigned long long ms = 1;
 	bool keep_cs = false;
+	int ret = 0;
+	unsigned long long ms = 1;
+	struct spi_statistics *statm = &master->statistics;
+	struct spi_statistics *stats = &msg->spi->statistics;
 
-	chipselect_enable(spidev);
+	chipselect_enable(msg->spi);
+
+	SPI_STATISTICS_INCREMENT_FIELD(statm, messages);
+	SPI_STATISTICS_INCREMENT_FIELD(stats, messages);
 
 	list_for_each_entry(xfer, &msg->transfers, transfer_list) {
+		trace_spi_transfer_start(msg, xfer);
+
+		spi_statistics_add_transfer_stats(statm, xfer, master);
+		spi_statistics_add_transfer_stats(stats, xfer, master);
+
 		if (xfer->tx_buf || xfer->rx_buf) {
 			reinit_completion(&master->xfer_completion);
 
 			ret = master->transfer_one(master, msg->spi, xfer);
 			if (ret < 0) {
+				SPI_STATISTICS_INCREMENT_FIELD(statm,
+							       errors);
+				SPI_STATISTICS_INCREMENT_FIELD(stats,
+							       errors);
 				dev_err(&msg->spi->dev,
 					"SPI transfer failed: %d\n", ret);
 				goto out;
@@ -904,6 +920,10 @@ static int intel_ssc_spi_transfer_one_message(struct spi_master *master,
 			}
 
 			if (ms == 0) {
+				SPI_STATISTICS_INCREMENT_FIELD(statm,
+							       timedout);
+				SPI_STATISTICS_INCREMENT_FIELD(stats,
+							       timedout);
 				dev_err(&msg->spi->dev,
 					"SPI transfer timed out\n");
 				msg->status = -ETIMEDOUT;
@@ -914,6 +934,8 @@ static int intel_ssc_spi_transfer_one_message(struct spi_master *master,
 					"Bufferless transfer has length %u\n",
 					xfer->len);
 		}
+
+		trace_spi_transfer_stop(msg, xfer);
 
 		if (msg->status != -EINPROGRESS)
 			goto out;
@@ -926,9 +948,9 @@ static int intel_ssc_spi_transfer_one_message(struct spi_master *master,
 					 &msg->transfers)) {
 				keep_cs = true;
 			} else {
-				chipselect_disable(spidev);
+				chipselect_disable(msg->spi);
 				udelay(10);
-				chipselect_enable(spidev);
+				chipselect_enable(msg->spi);
 			}
 		}
 
@@ -937,7 +959,7 @@ static int intel_ssc_spi_transfer_one_message(struct spi_master *master,
 
 out:
 	if (ret != 0 || !keep_cs)
-		chipselect_disable(spidev);
+		chipselect_disable(msg->spi);
 
 	if (msg->status == -EINPROGRESS)
 		msg->status = ret;
