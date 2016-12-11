@@ -506,12 +506,16 @@ static void intel_ssc_spi_cleanup(struct spi_device *spidev)
 	spi_set_ctldata(spidev, NULL);
 }
 
-static void hw_setup_message(const struct intel_ssc_spi *spi,
-				struct spi_device *spidev)
+static int intel_ssc_prepare_message(struct spi_master *master,
+			       struct spi_message *message)
 {
+	struct intel_ssc_spi *spi = spi_master_get_devdata(master);
+	
 	hw_enter_config_mode(spi);
-	hw_setup_clock_mode(spi, spidev->mode);
+	hw_setup_clock_mode(spi, message->spi->mode);
 	hw_enter_active_mode(spi);
+
+	return 0;
 }
 
 static void hw_setup_transfer(struct intel_ssc_spi *spi,
@@ -556,10 +560,15 @@ static void hw_setup_transfer(struct intel_ssc_spi *spi,
 	intel_ssc_spi_writel(spi, con, SPI_CON);
 }
 
-static void hw_finish_message(const struct intel_ssc_spi *spi)
+static int intel_ssc_unprepare_message(struct spi_master *master,
+				 struct spi_message *message)
 {
+	struct intel_ssc_spi *spi = spi_master_get_devdata(master);
+
 	/* Disable transmitter and receiver */
 	intel_ssc_spi_maskl(spi, 0, SPI_CON_TXOFF | SPI_CON_RXOFF, SPI_CON);
+
+	return 0;
 }
 
 static void tx_fifo_write(struct intel_ssc_spi *spi)
@@ -835,23 +844,6 @@ static int intel_ssc_transfer_one(struct spi_master *master, struct spi_device *
 	return transfer_start(spi, spidev, t);		
 }
 
-static int intel_ssc_prepare_message(struct spi_master *master,
-			       struct spi_message *message)
-{
-	struct intel_ssc_spi *spi = spi_master_get_devdata(master);
-
-	hw_setup_message(spi, message->spi);
-	return 0;
-}
-
-static int intel_ssc_unprepare_message(struct spi_master *master,
-				 struct spi_message *message)
-{
-	struct intel_ssc_spi *spi = spi_master_get_devdata(master);
-
-	hw_finish_message(spi);
-	return 0;
-}
 
 static const struct intel_ssc_spi_hwcfg spi_xway = {
 	.irnen_r = SPI_IRNEN_R_XWAY,
