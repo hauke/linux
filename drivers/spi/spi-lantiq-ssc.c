@@ -393,6 +393,7 @@ static int lantiq_ssc_check_finished(struct spi_master *master,
 		if (!(stat & SPI_STAT_BSY))
 			return spi->status;
 
+		printk("%s:%i: bussy: %lu\n", __func__, __LINE__, timeout);
 		cond_resched();
 	} while (!time_after_eq(jiffies, end));
 
@@ -437,7 +438,7 @@ static int lantiq_ssc_prepare_message(struct spi_master *master,
 
 	int err;
 
-	err = lantiq_ssc_check_finished(master, msecs_to_jiffies(100));
+	err = lantiq_ssc_check_finished(master, msecs_to_jiffies(105));
 	if (err)
 		printk("%s:%i: err: %i\n", __func__, __LINE__, err);
 
@@ -748,7 +749,7 @@ static void lantiq_ssc_set_cs(struct spi_device *spidev, bool enable)
 	u32 fgpo;
 	int err;
 
-	err = lantiq_ssc_check_finished(spidev->master, msecs_to_jiffies(100));
+	err = lantiq_ssc_check_finished(spidev->master, msecs_to_jiffies(104));
 	if (err)
 		printk("%s:%i: err: %i\n", __func__, __LINE__, err);
 
@@ -767,7 +768,7 @@ static int lantiq_ssc_transfer_one(struct spi_master *master,
 	struct lantiq_ssc_spi *spi = spi_master_get_devdata(master);
 	int err;
 
-	err = lantiq_ssc_check_finished(spidev->master, msecs_to_jiffies(100));
+	err = lantiq_ssc_check_finished(spidev->master, msecs_to_jiffies(103));
 	if (err)
 		printk("%s:%i: err: %i\n", __func__, __LINE__, err);
 
