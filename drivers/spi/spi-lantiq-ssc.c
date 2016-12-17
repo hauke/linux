@@ -748,6 +748,10 @@ static void lantiq_ssc_set_cs(struct spi_device *spidev, bool enable)
 	unsigned int cs = spidev->chip_select;
 	u32 fgpo;
 
+	err = lantiq_ssc_check_finished(master, msecs_to_jiffies(100));
+	if (err)
+		printk("%s:%i: err: %i\n", __func__, __LINE__, err);
+
 	if (!!(spidev->mode & SPI_CS_HIGH) == enable)
 		fgpo = (1 << (cs - spi->base_cs));
 	else
@@ -762,10 +766,6 @@ static int lantiq_ssc_transfer_one(struct spi_master *master,
 {
 	struct lantiq_ssc_spi *spi = spi_master_get_devdata(master);
 	int err;
-
-	err = lantiq_ssc_check_finished(master, msecs_to_jiffies(100));
-	if (err)
-		printk("%s:%i: err: %i\n", __func__, __LINE__, err);
 
 	spi->check_finished = false;
 	hw_setup_transfer(spi, spidev, t);
