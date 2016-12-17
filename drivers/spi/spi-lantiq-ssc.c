@@ -99,6 +99,8 @@
 #define SPI_STAT_ME		BIT(7)	/* Mode error flag */
 #define SPI_STAT_MS		BIT(1)	/* Master/slave select bit */
 #define SPI_STAT_EN		BIT(0)	/* Enable bit */
+#define SPI_STAT_ERRORS		(SPI_STAT_ME | SPI_STAT_TE | SPI_STAT_RE | \
+				 SPI_STAT_AE | SPI_STAT_TUE | SPI_STAT_RUE)
 
 #define SPI_WHBSTATE_SETTUE	BIT(15)	/* Set transmit underflow error flag */
 #define SPI_WHBSTATE_SETAE	BIT(14)	/* Set abort error flag */
@@ -116,7 +118,9 @@
 #define SPI_WHBSTATE_CLRMS	BIT(2)	/* Clear master select bit */
 #define SPI_WHBSTATE_SETEN	BIT(1)	/* Set enable bit (operational mode) */
 #define SPI_WHBSTATE_CLREN	BIT(0)	/* Clear enable bit (config mode */
-#define SPI_WHBSTATE_CLR_ERRORS	0x0F50
+#define SPI_WHBSTATE_CLR_ERRORS	(SPI_WHBSTATE_CLRRUE | SPI_WHBSTATE_CLRME | \
+				 SPI_WHBSTATE_CLRTE | SPI_WHBSTATE_CLRRE | \
+				 SPI_WHBSTATE_CLRAE | SPI_WHBSTATE_CLRTUE)
 
 #define SPI_RXFCON_RXFITL_S	8	/* FIFO interrupt trigger level */
 #define SPI_RXFCON_RXFITL_M	(0x3F << SPI_RXFCON_RXFITL_S)
@@ -419,18 +423,9 @@ static int lantiq_ssc_prepare_message(struct spi_master *master,
 static void hw_setup_transfer(struct lantiq_ssc_spi *spi,
 			      struct spi_device *spidev, struct spi_transfer *t)
 {
-	unsigned int speed_hz, bits_per_word;
+	unsigned int speed_hz = t->speed_hz;
+	unsigned int bits_per_word = t->bits_per_word;
 	u32 con;
-
-	if (t->speed_hz)
-		speed_hz = t->speed_hz;
-	else
-		speed_hz = spidev->max_speed_hz;
-
-	if (t->bits_per_word)
-		bits_per_word = t->bits_per_word;
-	else
-		bits_per_word = spidev->bits_per_word;
 
 	if (bits_per_word != spi->bits_per_word ||
 		speed_hz != spi->speed_hz) {
@@ -491,7 +486,6 @@ static void tx_fifo_write(struct lantiq_ssc_spi *spi)
 			spi->tx_todo -= 2;
 			spi->tx += 2;
 			break;
-		case 24:
 		case 32:
 			tx32 = (u32 *) spi->tx;
 			data = *tx32;
@@ -501,6 +495,7 @@ static void tx_fifo_write(struct lantiq_ssc_spi *spi)
 		default:
 			WARN_ON(1);
 			data = 0;
+			break;
 		}
 
 		lantiq_ssc_writel(spi, data, SPI_TB);
@@ -532,7 +527,6 @@ static void rx_fifo_read_full_duplex(struct lantiq_ssc_spi *spi)
 			spi->rx_todo -= 2;
 			spi->rx += 2;
 			break;
-		case 24:
 		case 32:
 			rx32 = (u32 *) spi->rx;
 			*rx32 = data;
@@ -541,6 +535,7 @@ static void rx_fifo_read_full_duplex(struct lantiq_ssc_spi *spi)
 			break;
 		default:
 			WARN_ON(1);
+			break;
 		}
 
 		rx_fill--;
@@ -645,10 +640,15 @@ static irqreturn_t lantiq_ssc_err_interrupt(int irq, void *data)
 	struct lantiq_ssc_spi *spi = data;
 	u32 stat = lantiq_ssc_readl(spi, SPI_STAT);
 
+	if (!(stat & SPI_STAT_ERRORS))
+		return IRQ_NONE;
+
 	if (stat & SPI_STAT_RUE)
 		dev_err(spi->dev, "receive underflow error\n");
 	if (stat & SPI_STAT_TUE)
 		dev_err(spi->dev, "transmit underflow error\n");
+	if (stat & SPI_STAT_AE)
+		dev_err(spi->dev, "abort error\n");
 	if (stat & SPI_STAT_RE)
 		dev_err(spi->dev, "receive overflow error\n");
 	if (stat & SPI_STAT_TE)
@@ -880,8 +880,7 @@ static int lantiq_ssc_probe(struct platform_device *pdev)
 	master->mode_bits = SPI_CPOL | SPI_CPHA | SPI_LSB_FIRST | SPI_CS_HIGH |
 				SPI_LOOP;
 	master->bits_per_word_mask = SPI_BPW_RANGE_MASK(2, 8) |
-				     SPI_BPW_MASK(16) | SPI_BPW_MASK(24) |
-				     SPI_BPW_MASK(32);
+				     SPI_BPW_MASK(16) | SPI_BPW_MASK(32);
 
 	id = lantiq_ssc_readl(spi, SPI_ID);
 	spi->tx_fifo_size = (id & SPI_ID_TXFS_M) >> SPI_ID_TXFS_S;
