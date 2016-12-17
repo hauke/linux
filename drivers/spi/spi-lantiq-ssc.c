@@ -615,22 +615,17 @@ static irqreturn_t lantiq_ssc_xmit_interrupt(int irq, void *data)
 
 		if (spi->tx_todo)
 			tx_fifo_write(spi);
-		else {
-			if (tx_fifo_level(spi)) printk("%s:%i\n", __func__, __LINE__);
+		else if (!tx_fifo_level(spi))
 			goto completed;
-		}
 	} else if (spi->rx) {
 		if (spi->rx_todo) {
 			rx_fifo_read_half_duplex(spi);
 
 			if (spi->rx_todo)
 				rx_request(spi);
-			else {
-			if (tx_fifo_level(spi)) printk("%s:%i\n", __func__, __LINE__);
+			else
 				goto completed;
-			}
 		} else {
-			if (tx_fifo_level(spi)) printk("%s:%i\n", __func__, __LINE__);
 			goto completed;
 		}
 	}
@@ -638,10 +633,8 @@ static irqreturn_t lantiq_ssc_xmit_interrupt(int irq, void *data)
 	return IRQ_HANDLED;
 
 completed:
-	if (!tx_fifo_level(spi)) {
-		spi->status = 0;
-		spi_finalize_current_transfer(spi->master);
-	}
+	spi->status = 0;
+	spi_finalize_current_transfer(spi->master);
 
 	return IRQ_HANDLED;
 }
