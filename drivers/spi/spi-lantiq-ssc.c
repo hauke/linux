@@ -876,7 +876,7 @@ static int lantiq_ssc_probe(struct platform_device *pdev)
 	master->prepare_message = lantiq_ssc_prepare_message;
 	master->unprepare_message = lantiq_ssc_unprepare_message;
 	master->transfer_one = lantiq_ssc_transfer_one;
-	master->check_finished = lantiq_ssc_check_finished;
+//	master->check_finished = lantiq_ssc_check_finished;
 	master->mode_bits = SPI_CPOL | SPI_CPHA | SPI_LSB_FIRST | SPI_CS_HIGH |
 				SPI_LOOP;
 	master->bits_per_word_mask = SPI_BPW_RANGE_MASK(2, 8) |
