@@ -633,8 +633,10 @@ static irqreturn_t lantiq_ssc_xmit_interrupt(int irq, void *data)
 	return IRQ_HANDLED;
 
 completed:
-	spi->status = 0;
-	spi_finalize_current_transfer(spi->master);
+	if (!tx_fifo_level(spi)) {
+		spi->status = 0;
+		spi_finalize_current_transfer(spi->master);
+	}
 
 	return IRQ_HANDLED;
 }
