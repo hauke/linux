@@ -378,6 +378,27 @@ static void lantiq_ssc_hw_init(const struct lantiq_ssc_spi *spi)
 			  SPI_IRNEN);
 }
 
+static int lantiq_ssc_check_finished(struct spi_master *master,
+				     unsigned long timeout)
+{
+	struct lantiq_ssc_spi *spi = spi_master_get_devdata(master);
+	unsigned long end;
+
+	spi->check_finished = true;
+	/* make sure that HW is idle */
+	end = jiffies + timeout;
+	do {
+		u32 stat = lantiq_ssc_readl(spi, SPI_STAT);
+
+		if (!(stat & SPI_STAT_BSY))
+			return spi->status;
+
+		cond_resched();
+	} while (!time_after_eq(jiffies, end));
+
+	return -ETIMEDOUT;
+}
+
 static int lantiq_ssc_setup(struct spi_device *spidev)
 {
 	struct spi_master *master = spidev->master;
@@ -413,6 +434,12 @@ static int lantiq_ssc_prepare_message(struct spi_master *master,
 				      struct spi_message *message)
 {
 	struct lantiq_ssc_spi *spi = spi_master_get_devdata(master);
+
+	int err;
+
+	err = lantiq_ssc_check_finished(master, msecs_to_jiffies(100));
+	if (err)
+		printk("%s:%i: err: %i\n", __func__, __LINE__, err);
 
 	hw_enter_config_mode(spi);
 	hw_setup_clock_mode(spi, message->spi->mode);
@@ -704,27 +731,6 @@ static int transfer_start(struct lantiq_ssc_spi *spi, struct spi_device *spidev,
 	return t->len;
 }
 
-static int lantiq_ssc_check_finished(struct spi_master *master,
-				     unsigned long timeout)
-{
-	struct lantiq_ssc_spi *spi = spi_master_get_devdata(master);
-	unsigned long end;
-
-	spi->check_finished = true;
-	/* make sure that HW is idle */
-	end = jiffies + timeout;
-	do {
-		u32 stat = lantiq_ssc_readl(spi, SPI_STAT);
-
-		if (!(stat & SPI_STAT_BSY))
-			return spi->status;
-
-		cond_resched();
-	} while (!time_after_eq(jiffies, end));
-
-	return -ETIMEDOUT;
-}
-
 static void lantiq_ssc_handle_err(struct spi_master *master,
 				  struct spi_message *message)
 {
@@ -760,6 +766,10 @@ static int lantiq_ssc_transfer_one(struct spi_master *master,
 {
 	struct lantiq_ssc_spi *spi = spi_master_get_devdata(master);
 	int err;
+
+	err = lantiq_ssc_check_finished(spidev->master, msecs_to_jiffies(100));
+	if (err)
+		printk("%s:%i: err: %i\n", __func__, __LINE__, err);
 
 	spi->check_finished = false;
 	hw_setup_transfer(spi, spidev, t);
