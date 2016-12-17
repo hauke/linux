@@ -747,8 +747,9 @@ static void lantiq_ssc_set_cs(struct spi_device *spidev, bool enable)
 	struct lantiq_ssc_spi *spi = spi_master_get_devdata(spidev->master);
 	unsigned int cs = spidev->chip_select;
 	u32 fgpo;
+	int err;
 
-	err = lantiq_ssc_check_finished(master, msecs_to_jiffies(100));
+	err = lantiq_ssc_check_finished(spidev->master, msecs_to_jiffies(100));
 	if (err)
 		printk("%s:%i: err: %i\n", __func__, __LINE__, err);
 
