@@ -761,6 +761,10 @@ static int lantiq_ssc_transfer_one(struct spi_master *master,
 				   struct spi_transfer *t)
 {
 	struct lantiq_ssc_spi *spi = spi_master_get_devdata(master);
+	int err;
+
+	err = lantiq_ssc_check_finished(master, msecs_to_jiffies(100));
+	printk("%s:%i: err: %i\n", __func__, __LINE__, err);
 
 	spi->check_finished = false;
 	hw_setup_transfer(spi, spidev, t);
