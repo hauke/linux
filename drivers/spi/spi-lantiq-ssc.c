@@ -180,7 +180,6 @@ struct lantiq_ssc_spi {
 	unsigned int			tx_fifo_size;
 	unsigned int			rx_fifo_size;
 	unsigned int			base_cs;
-	bool				check_finished;
 };
 
 static u32 lantiq_ssc_readl(const struct lantiq_ssc_spi *spi, u32 reg)
@@ -378,28 +377,6 @@ static void lantiq_ssc_hw_init(const struct lantiq_ssc_spi *spi)
 			  SPI_IRNEN);
 }
 
-static int lantiq_ssc_check_finished(struct spi_master *master,
-				     unsigned long timeout)
-{
-	struct lantiq_ssc_spi *spi = spi_master_get_devdata(master);
-	unsigned long end;
-
-	spi->check_finished = true;
-	/* make sure that HW is idle */
-	end = jiffies + timeout;
-	do {
-		u32 stat = lantiq_ssc_readl(spi, SPI_STAT);
-
-		if (!(stat & SPI_STAT_BSY))
-			return spi->status;
-
-		printk("%s:%i: bussy: %lu\n", __func__, __LINE__, timeout);
-		cond_resched();
-	} while (!time_after_eq(jiffies, end));
-
-	return -ETIMEDOUT;
-}
-
 static int lantiq_ssc_setup(struct spi_device *spidev)
 {
 	struct spi_master *master = spidev->master;
@@ -435,12 +412,6 @@ static int lantiq_ssc_prepare_message(struct spi_master *master,
 				      struct spi_message *message)
 {
 	struct lantiq_ssc_spi *spi = spi_master_get_devdata(master);
-
-	int err;
-
-	err = lantiq_ssc_check_finished(master, 105);
-	if (err)
-		printk("%s:%i: err: %i\n", __func__, __LINE__, err);
 
 	hw_enter_config_mode(spi);
 	hw_setup_clock_mode(spi, message->spi->mode);
@@ -634,9 +605,6 @@ static irqreturn_t lantiq_ssc_xmit_interrupt(int irq, void *data)
 {
 	struct lantiq_ssc_spi *spi = data;
 
-	if (spi->check_finished)
-		printk("%s:%i: called with %i after finished\n", __func__, __LINE__, irq);
-
 	if (spi->tx) {
 		if (spi->rx && spi->rx_todo)
 			rx_fifo_read_full_duplex(spi);
@@ -671,9 +639,6 @@ static irqreturn_t lantiq_ssc_err_interrupt(int irq, void *data)
 {
 	struct lantiq_ssc_spi *spi = data;
 	u32 stat = lantiq_ssc_readl(spi, SPI_STAT);
-
-	if (spi->check_finished)
-		printk("%s:%i: called with %i after finished\n", __func__, __LINE__, irq);
 
 	if (!(stat & SPI_STAT_ERRORS))
 		return IRQ_NONE;
@@ -732,6 +697,26 @@ static int transfer_start(struct lantiq_ssc_spi *spi, struct spi_device *spidev,
 	return t->len;
 }
 
+static int lantiq_ssc_check_finished(struct spi_master *master,
+				     unsigned long timeout)
+{
+	struct lantiq_ssc_spi *spi = spi_master_get_devdata(master);
+	unsigned long end;
+
+	/* make sure that HW is idle */
+	end = jiffies + timeout;
+	do {
+		u32 stat = lantiq_ssc_readl(spi, SPI_STAT);
+
+		if (!(stat & SPI_STAT_BSY))
+			return spi->status;
+
+		cond_resched();
+	} while (!time_after_eq(jiffies, end));
+
+	return -ETIMEDOUT;
+}
+
 static void lantiq_ssc_handle_err(struct spi_master *master,
 				  struct spi_message *message)
 {
@@ -747,11 +732,6 @@ static void lantiq_ssc_set_cs(struct spi_device *spidev, bool enable)
 	struct lantiq_ssc_spi *spi = spi_master_get_devdata(spidev->master);
 	unsigned int cs = spidev->chip_select;
 	u32 fgpo;
-	int err;
-
-	err = lantiq_ssc_check_finished(spidev->master, 104);
-	if (err)
-		printk("%s:%i: err: %i\n", __func__, __LINE__, err);
 
 	if (!!(spidev->mode & SPI_CS_HIGH) == enable)
 		fgpo = (1 << (cs - spi->base_cs));
@@ -766,13 +746,7 @@ static int lantiq_ssc_transfer_one(struct spi_master *master,
 				   struct spi_transfer *t)
 {
 	struct lantiq_ssc_spi *spi = spi_master_get_devdata(master);
-	int err;
 
-	err = lantiq_ssc_check_finished(spidev->master, 103);
-	if (err)
-		printk("%s:%i: err: %i\n", __func__, __LINE__, err);
-
-	spi->check_finished = false;
 	hw_setup_transfer(spi, spidev, t);
 
 	return transfer_start(spi, spidev, t);
@@ -902,7 +876,7 @@ static int lantiq_ssc_probe(struct platform_device *pdev)
 	master->prepare_message = lantiq_ssc_prepare_message;
 	master->unprepare_message = lantiq_ssc_unprepare_message;
 	master->transfer_one = lantiq_ssc_transfer_one;
-//	master->check_finished = lantiq_ssc_check_finished;
+	master->check_finished = lantiq_ssc_check_finished;
 	master->mode_bits = SPI_CPOL | SPI_CPHA | SPI_LSB_FIRST | SPI_CS_HIGH |
 				SPI_LOOP;
 	master->bits_per_word_mask = SPI_BPW_RANGE_MASK(2, 8) |
