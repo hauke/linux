@@ -370,9 +370,8 @@ static inline void spi_unregister_driver(struct spi_driver *sdrv)
  *                    transfer_one_message are mutually exclusive; when both
  *                    are set, the generic subsystem does not call your
  *                    transfer_one callback.
- * @check_finished: This callback allows the driver to check if the message
- *		    was fully transferred. return a negative value in case
- *		    of an error.
+ * @transfer_status: This callback allows the driver to return an error code
+ *		     in case the scheduled single spi transfer failed.
  * @handle_err: the subsystem calls the driver to handle an error that occurs
  *		in the generic implementation of transfer_one_message().
  * @unprepare_message: undo any work done by prepare_message().
@@ -550,7 +549,7 @@ struct spi_master {
 	void (*set_cs)(struct spi_device *spi, bool enable);
 	int (*transfer_one)(struct spi_master *master, struct spi_device *spi,
 			    struct spi_transfer *transfer);
-	int (*check_finished)(struct spi_master *master, unsigned long timeout);
+	int (*transfer_status)(struct spi_master *master, unsigned long timeout);
 	void (*handle_err)(struct spi_master *master,
 			   struct spi_message *message);
 

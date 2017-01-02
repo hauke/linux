@@ -1021,8 +1021,8 @@ static int spi_transfer_one_message(struct spi_master *master,
 								 msecs_to_jiffies(ms));
 			}
 
-			if (master->check_finished) {
-				ret = master->check_finished(master, ms);
+			if (master->transfer_status) {
+				ret = master->transfer_status(master, ms);
 				if (ret) {
 					dev_err(&msg->spi->dev,
 						"SPI transfer not finished: %i\n",

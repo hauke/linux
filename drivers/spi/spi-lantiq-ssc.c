@@ -697,13 +697,19 @@ static int transfer_start(struct lantiq_ssc_spi *spi, struct spi_device *spidev,
 	return t->len;
 }
 
-static int lantiq_ssc_check_finished(struct spi_master *master,
-				     unsigned long timeout)
+static int lantiq_ssc_transfer_status(struct spi_master *master,
+				      unsigned long timeout)
 {
 	struct lantiq_ssc_spi *spi = spi_master_get_devdata(master);
 	unsigned long end;
 
-	/* make sure that HW is idle */
+	/*
+	 * The driver only gets an interrupt when the FIFO is empty, but there
+	 * is an additional shift register from which the data is written to
+	 * the wire. We get the last interrupt when the controller starts to
+	 * write the last word to the wire, not when it is finished. Do busy
+	 * waiting till it finishes.
+	 */
 	end = jiffies + timeout;
 	do {
 		u32 stat = lantiq_ssc_readl(spi, SPI_STAT);
@@ -876,7 +882,7 @@ static int lantiq_ssc_probe(struct platform_device *pdev)
 	master->prepare_message = lantiq_ssc_prepare_message;
 	master->unprepare_message = lantiq_ssc_unprepare_message;
 	master->transfer_one = lantiq_ssc_transfer_one;
-	master->check_finished = lantiq_ssc_check_finished;
+	master->transfer_status = lantiq_ssc_transfer_status;
 	master->mode_bits = SPI_CPOL | SPI_CPHA | SPI_LSB_FIRST | SPI_CS_HIGH |
 				SPI_LOOP;
 	master->bits_per_word_mask = SPI_BPW_RANGE_MASK(2, 8) |
