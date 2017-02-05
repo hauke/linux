@@ -460,14 +460,11 @@ static int lantiq_ssc_unprepare_message(struct spi_master *master,
 					struct spi_message *message)
 {
 	struct lantiq_ssc_spi *spi = spi_master_get_devdata(master);
-	bool cancel;
+
+	flush_workqueue(spi->wq);
 
 	/* Disable transmitter and receiver while idle */
 	lantiq_ssc_maskl(spi, 0, SPI_CON_TXOFF | SPI_CON_RXOFF, SPI_CON);
-
-	cancel = cancel_delayed_work_sync(spi->wq);
-	if (cancel)
-		return -EIO;
 
 	return 0;
 }
@@ -711,21 +708,22 @@ static int transfer_start(struct lantiq_ssc_spi *spi, struct spi_device *spidev,
  * write the last word to the wire, not when it is finished. Do busy
  * waiting till it finishes.
  */
-static void *lantiq_ssc_bussy_work(struct work_struct *work)
+static void lantiq_ssc_bussy_work(struct work_struct *work)
 {
 	struct lantiq_ssc_spi *spi;
-	unsigned long end = 8LL * 1000LL;
+	unsigned long long timeout = 8LL * 1000LL;
+	unsigned long end;
 
 	spi = container_of(work, typeof(*spi), work);
 
-	do_div(ms, spi->speed_hz);
-	end += end + 100; /* some tolerance */
-	end += jiffies;
+	do_div(timeout, spi->speed_hz);
+	timeout += timeout + 100; /* some tolerance */
 
+	end = jiffies + msecs_to_jiffies(timeout);
 	do {
 		u32 stat = lantiq_ssc_readl(spi, SPI_STAT);
 
-		if (!(stat & SPI_STAT_BSY)) 
+		if (!(stat & SPI_STAT_BSY)) {
 			spi_finalize_current_transfer(spi->master);
 			return;
 		}
@@ -795,6 +793,7 @@ MODULE_DEVICE_TABLE(of, lantiq_ssc_match);
 
 static int lantiq_ssc_probe(struct platform_device *pdev)
 {
+	struct device *dev = &pdev->dev;
 	struct spi_master *master;
 	struct resource *res;
 	struct lantiq_ssc_spi *spi;
@@ -804,69 +803,69 @@ static int lantiq_ssc_probe(struct platform_device *pdev)
 	u32 id, supports_dma, revision;
 	unsigned int num_cs;
 
-	match = of_match_device(lantiq_ssc_match, &pdev->dev);
+	match = of_match_device(lantiq_ssc_match, dev);
 	if (!match) {
-		dev_err(&pdev->dev, "no device match\n");
+		dev_err(dev, "no device match\n");
 		return -EINVAL;
 	}
 	hwcfg = match->data;
 
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	if (!res) {
-		dev_err(&pdev->dev, "failed to get resources\n");
+		dev_err(dev, "failed to get resources\n");
 		return -ENXIO;
 	}
 
 	rx_irq = platform_get_irq_byname(pdev, SPI_RX_IRQ_NAME);
 	if (rx_irq < 0) {
-		dev_err(&pdev->dev, "failed to get %s\n", SPI_RX_IRQ_NAME);
+		dev_err(dev, "failed to get %s\n", SPI_RX_IRQ_NAME);
 		return -ENXIO;
 	}
 
 	tx_irq = platform_get_irq_byname(pdev, SPI_TX_IRQ_NAME);
 	if (tx_irq < 0) {
-		dev_err(&pdev->dev, "failed to get %s\n", SPI_TX_IRQ_NAME);
+		dev_err(dev, "failed to get %s\n", SPI_TX_IRQ_NAME);
 		return -ENXIO;
 	}
 
 	err_irq = platform_get_irq_byname(pdev, SPI_ERR_IRQ_NAME);
 	if (err_irq < 0) {
-		dev_err(&pdev->dev, "failed to get %s\n", SPI_ERR_IRQ_NAME);
+		dev_err(dev, "failed to get %s\n", SPI_ERR_IRQ_NAME);
 		return -ENXIO;
 	}
 
-	master = spi_alloc_master(&pdev->dev, sizeof(struct lantiq_ssc_spi));
+	master = spi_alloc_master(dev, sizeof(struct lantiq_ssc_spi));
 	if (!master)
 		return -ENOMEM;
 
 	spi = spi_master_get_devdata(master);
 	spi->master = master;
-	spi->dev = &pdev->dev;
+	spi->dev = dev;
 	spi->hwcfg = hwcfg;
 	platform_set_drvdata(pdev, spi);
 
-	spi->regbase = devm_ioremap_resource(&pdev->dev, res);
+	spi->regbase = devm_ioremap_resource(dev, res);
 	if (IS_ERR(spi->regbase)) {
 		err = PTR_ERR(spi->regbase);
 		goto err_master_put;
 	}
 
-	err = devm_request_irq(&pdev->dev, rx_irq, lantiq_ssc_xmit_interrupt,
+	err = devm_request_irq(dev, rx_irq, lantiq_ssc_xmit_interrupt,
 			       0, SPI_RX_IRQ_NAME, spi);
 	if (err)
 		goto err_master_put;
 
-	err = devm_request_irq(&pdev->dev, tx_irq, lantiq_ssc_xmit_interrupt,
+	err = devm_request_irq(dev, tx_irq, lantiq_ssc_xmit_interrupt,
 			       0, SPI_TX_IRQ_NAME, spi);
 	if (err)
 		goto err_master_put;
 
-	err = devm_request_irq(&pdev->dev, err_irq, lantiq_ssc_err_interrupt,
+	err = devm_request_irq(dev, err_irq, lantiq_ssc_err_interrupt,
 			       0, SPI_ERR_IRQ_NAME, spi);
 	if (err)
 		goto err_master_put;
 
-	spi->spi_clk = devm_clk_get(&pdev->dev, "gate");
+	spi->spi_clk = devm_clk_get(dev, "gate");
 	if (IS_ERR(spi->spi_clk)) {
 		err = PTR_ERR(spi->spi_clk);
 		goto err_master_put;
@@ -882,7 +881,7 @@ static int lantiq_ssc_probe(struct platform_device *pdev)
 #if defined(CONFIG_LANTIQ) && !defined(CONFIG_COMMON_CLK)
 	spi->fpi_clk = clk_get_fpi();
 #else
-	spi->fpi_clk = clk_get(&pdev->dev, "freq");
+	spi->fpi_clk = clk_get(dev, "freq");
 #endif
 	if (IS_ERR(spi->fpi_clk)) {
 		err = PTR_ERR(spi->fpi_clk);
@@ -915,9 +914,9 @@ static int lantiq_ssc_probe(struct platform_device *pdev)
 	spi->wq = alloc_ordered_workqueue(dev_name(dev), 0);
 	if (!spi->wq) {
 		err = -ENOMEM;
-		goto err_clk_disable;
+		goto err_clk_put;
 	}
-	INIT_WORK(spi->wq, lantiq_ssc_bussy_work);
+	INIT_WORK(&spi->work, lantiq_ssc_bussy_work);
 
 	id = lantiq_ssc_readl(spi, SPI_ID);
 	spi->tx_fifo_size = (id & SPI_ID_TXFS_M) >> SPI_ID_TXFS_S;
@@ -927,13 +926,13 @@ static int lantiq_ssc_probe(struct platform_device *pdev)
 
 	lantiq_ssc_hw_init(spi);
 
-	dev_info(&pdev->dev,
+	dev_info(dev,
 		"Lantiq SSC SPI controller (Rev %i, TXFS %u, RXFS %u, DMA %u)\n",
 		revision, spi->tx_fifo_size, spi->rx_fifo_size, supports_dma);
 
-	err = devm_spi_register_master(&pdev->dev, master);
+	err = devm_spi_register_master(dev, master);
 	if (err) {
-		dev_err(&pdev->dev, "failed to register spi_master\n");
+		dev_err(dev, "failed to register spi_master\n");
 		goto err_wq_destroy;
 	}
 
