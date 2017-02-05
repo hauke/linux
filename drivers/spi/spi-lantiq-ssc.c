@@ -22,7 +22,9 @@
 #include <linux/pm_runtime.h>
 #include <linux/spi/spi.h>
 
+#ifdef CONFIG_LANTIQ
 #include <lantiq_soc.h>
+#endif
 
 #define SPI_RX_IRQ_NAME		"spi_rx"
 #define SPI_TX_IRQ_NAME		"spi_tx"
@@ -169,6 +171,8 @@ struct lantiq_ssc_spi {
 	const struct lantiq_ssc_hwcfg	*hwcfg;
 
 	spinlock_t			lock;
+	struct workqueue_struct		*wq;
+	struct work_struct		work;
 
 	const u8			*tx;
 	u8				*rx;
@@ -176,7 +180,6 @@ struct lantiq_ssc_spi {
 	unsigned int			rx_todo;
 	unsigned int			bits_per_word;
 	unsigned int			speed_hz;
-	int				status;
 	unsigned int			tx_fifo_size;
 	unsigned int			rx_fifo_size;
 	unsigned int			base_cs;
@@ -457,9 +460,14 @@ static int lantiq_ssc_unprepare_message(struct spi_master *master,
 					struct spi_message *message)
 {
 	struct lantiq_ssc_spi *spi = spi_master_get_devdata(master);
+	bool cancel;
 
 	/* Disable transmitter and receiver while idle */
 	lantiq_ssc_maskl(spi, 0, SPI_CON_TXOFF | SPI_CON_RXOFF, SPI_CON);
+
+	cancel = cancel_delayed_work_sync(spi->wq);
+	if (cancel)
+		return -EIO;
 
 	return 0;
 }
@@ -629,8 +637,7 @@ static irqreturn_t lantiq_ssc_xmit_interrupt(int irq, void *data)
 	return IRQ_HANDLED;
 
 completed:
-	spi->status = 0;
-	spi_finalize_current_transfer(spi->master);
+	queue_work(spi->wq, &spi->work);
 
 	return IRQ_HANDLED;
 }
@@ -660,8 +667,9 @@ static irqreturn_t lantiq_ssc_err_interrupt(int irq, void *data)
 	lantiq_ssc_maskl(spi, 0, SPI_WHBSTATE_CLR_ERRORS, SPI_WHBSTATE);
 
 	/* set bad status so it can be retried */
-	spi->status = -EIO;
-	spi_finalize_current_transfer(spi->master);
+	if (spi->master->cur_msg)
+		spi->master->cur_msg->status = -EIO;
+	queue_work(spi->wq, &spi->work);
 
 	return IRQ_HANDLED;
 }
@@ -675,7 +683,6 @@ static int transfer_start(struct lantiq_ssc_spi *spi, struct spi_device *spidev,
 
 	spi->tx = t->tx_buf;
 	spi->rx = t->rx_buf;
-	spi->status = -EINPROGRESS;
 
 	if (t->tx_buf) {
 		spi->tx_todo = t->len;
@@ -697,30 +704,40 @@ static int transfer_start(struct lantiq_ssc_spi *spi, struct spi_device *spidev,
 	return t->len;
 }
 
-static int lantiq_ssc_transfer_status(struct spi_master *master,
-				      unsigned long timeout)
+/*
+ * The driver only gets an interrupt when the FIFO is empty, but there
+ * is an additional shift register from which the data is written to
+ * the wire. We get the last interrupt when the controller starts to
+ * write the last word to the wire, not when it is finished. Do busy
+ * waiting till it finishes.
+ */
+static void *lantiq_ssc_bussy_work(struct work_struct *work)
 {
-	struct lantiq_ssc_spi *spi = spi_master_get_devdata(master);
-	unsigned long end;
+	struct lantiq_ssc_spi *spi;
+	unsigned long end = 8LL * 1000LL;
 
-	/*
-	 * The driver only gets an interrupt when the FIFO is empty, but there
-	 * is an additional shift register from which the data is written to
-	 * the wire. We get the last interrupt when the controller starts to
-	 * write the last word to the wire, not when it is finished. Do busy
-	 * waiting till it finishes.
-	 */
-	end = jiffies + timeout;
+	spi = container_of(work, typeof(*spi), work);
+
+	do_div(ms, spi->speed_hz);
+	end += end + 100; /* some tolerance */
+	end += jiffies;
+
 	do {
 		u32 stat = lantiq_ssc_readl(spi, SPI_STAT);
 
-		if (!(stat & SPI_STAT_BSY))
-			return spi->status;
+		if (!(stat & SPI_STAT_BSY)) 
+			spi_finalize_current_transfer(spi->master);
+			return;
+		}
 
 		cond_resched();
 	} while (!time_after_eq(jiffies, end));
 
-	return -ETIMEDOUT;
+	if (spi->master->cur_msg)
+		spi->master->cur_msg->status = -EIO;
+	spi_finalize_current_transfer(spi->master);
+
+	return;
 }
 
 static void lantiq_ssc_handle_err(struct spi_master *master,
@@ -849,7 +866,7 @@ static int lantiq_ssc_probe(struct platform_device *pdev)
 	if (err)
 		goto err_master_put;
 
-	spi->spi_clk = devm_clk_get(&pdev->dev, NULL);
+	spi->spi_clk = devm_clk_get(&pdev->dev, "gate");
 	if (IS_ERR(spi->spi_clk)) {
 		err = PTR_ERR(spi->spi_clk);
 		goto err_master_put;
@@ -858,7 +875,15 @@ static int lantiq_ssc_probe(struct platform_device *pdev)
 	if (err)
 		goto err_master_put;
 
+	/*
+	 * Use the old clk_get_fpi() function on Lantiq platform, till it
+	 * supports common clk.
+	 */
+#if defined(CONFIG_LANTIQ) && !defined(CONFIG_COMMON_CLK)
 	spi->fpi_clk = clk_get_fpi();
+#else
+	spi->fpi_clk = clk_get(&pdev->dev, "freq");
+#endif
 	if (IS_ERR(spi->fpi_clk)) {
 		err = PTR_ERR(spi->fpi_clk);
 		goto err_clk_disable;
@@ -882,11 +907,17 @@ static int lantiq_ssc_probe(struct platform_device *pdev)
 	master->prepare_message = lantiq_ssc_prepare_message;
 	master->unprepare_message = lantiq_ssc_unprepare_message;
 	master->transfer_one = lantiq_ssc_transfer_one;
-	master->transfer_status = lantiq_ssc_transfer_status;
 	master->mode_bits = SPI_CPOL | SPI_CPHA | SPI_LSB_FIRST | SPI_CS_HIGH |
 				SPI_LOOP;
 	master->bits_per_word_mask = SPI_BPW_RANGE_MASK(2, 8) |
 				     SPI_BPW_MASK(16) | SPI_BPW_MASK(32);
+
+	spi->wq = alloc_ordered_workqueue(dev_name(dev), 0);
+	if (!spi->wq) {
+		err = -ENOMEM;
+		goto err_clk_disable;
+	}
+	INIT_WORK(spi->wq, lantiq_ssc_bussy_work);
 
 	id = lantiq_ssc_readl(spi, SPI_ID);
 	spi->tx_fifo_size = (id & SPI_ID_TXFS_M) >> SPI_ID_TXFS_S;
@@ -903,11 +934,13 @@ static int lantiq_ssc_probe(struct platform_device *pdev)
 	err = devm_spi_register_master(&pdev->dev, master);
 	if (err) {
 		dev_err(&pdev->dev, "failed to register spi_master\n");
-		goto err_clk_put;
+		goto err_wq_destroy;
 	}
 
 	return 0;
 
+err_wq_destroy:
+	destroy_workqueue(spi->wq);
 err_clk_put:
 	clk_put(spi->fpi_clk);
 err_clk_disable:
@@ -928,6 +961,7 @@ static int lantiq_ssc_remove(struct platform_device *pdev)
 	tx_fifo_flush(spi);
 	hw_enter_config_mode(spi);
 
+	destroy_workqueue(spi->wq);
 	clk_disable_unprepare(spi->spi_clk);
 	clk_put(spi->fpi_clk);
 
