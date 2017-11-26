@@ -199,7 +199,6 @@ struct xrx200_chan {
 	int refcount;
 	int tx_free;
 
-	struct net_device dummy_dev;
 	struct net_device *devs;
 
 	struct tasklet_struct tasklet;
@@ -377,7 +376,6 @@ static int xrx200_poll_rx(struct napi_struct *napi, int budget)
 {
 	struct xrx200_chan *ch = container_of(napi,
 				struct xrx200_chan, napi);
-	struct xrx200_priv *priv = netdev_priv(ch->devs);
 	int rx = 0;
 	int complete = 0;
 
@@ -455,6 +453,13 @@ static int xrx200_start_xmit(struct sk_buff *skb, struct net_device *dev)
 	int ret = NETDEV_TX_OK;
 	int len;
 	u32 special_tag = (SPID_CPU_PORT << SPID_SHIFT) | DPID_ENABLE;
+
+	ch = &priv->hw->chan[XRX200_DMA_TX];
+
+	desc = &ch->dma.desc_base[ch->dma.desc];
+
+	skb->dev = dev;
+	len = skb->len < ETH_ZLEN ? ETH_ZLEN : skb->len;
 
 	if(skb_headroom(skb) < 4) {
 		struct sk_buff *tmp = skb_realloc_headroom(skb, 4);
@@ -1062,8 +1067,7 @@ static int xrx200_probe(struct platform_device *pdev)
 	xrx200_hw.chan[XRX200_DMA_TX_2].devs = xrx200_hw.devs;
 
 	/* setup NAPI */
-	init_dummy_netdev(&xrx200_hw.chan[XRX200_DMA_RX].dummy_dev);
-	netif_napi_add(&xrx200_hw.chan[XRX200_DMA_RX].dummy_dev,
+	netif_napi_add(xrx200_hw.chan[XRX200_DMA_RX].devs,
 			&xrx200_hw.chan[XRX200_DMA_RX].napi, xrx200_poll_rx, 32);
 
 	platform_set_drvdata(pdev, &xrx200_hw);
