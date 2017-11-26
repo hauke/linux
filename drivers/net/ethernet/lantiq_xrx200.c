@@ -36,13 +36,6 @@
 #include "lantiq_xrx200_sw.h"
 
 #define SW_POLLING
-#define SW_ROUTING
-
-#ifdef SW_ROUTING
-#define XRX200_MAX_DEV		2
-#else
-#define XRX200_MAX_DEV		1
-#endif
 
 #define XRX200_MAX_VLAN		64
 #define XRX200_PCE_ACTVLAN_IDX	0x01
@@ -207,7 +200,7 @@ struct xrx200_chan {
 	int tx_free;
 
 	struct net_device dummy_dev;
-	struct net_device *devs[XRX200_MAX_DEV];
+	struct net_device *devs;
 
 	struct tasklet_struct tasklet;
 	struct napi_struct napi;
@@ -222,18 +215,12 @@ struct xrx200_hw {
 	struct mii_bus *mii_bus;
 
 	struct xrx200_chan chan[XRX200_MAX_DMA];
-	u16 vlan_vid[XRX200_MAX_VLAN];
-	u16 vlan_port_map[XRX200_MAX_VLAN];
 
-	struct net_device *devs[XRX200_MAX_DEV];
-	int num_devs;
-
-	int port_map[XRX200_MAX_PORT];
+	struct net_device *devs;
 };
 
 struct xrx200_priv {
 	struct net_device_stats stats;
-	int id;
 
 	struct xrx200_port port[XRX200_MAX_PORT];
 	int num_port;
@@ -357,9 +344,9 @@ skip:
 	return 0;
 }
 
-static void xrx200_hw_receive(struct xrx200_chan *ch, int id)
+static void xrx200_hw_receive(struct xrx200_chan *ch)
 {
-	struct net_device *dev = ch->devs[id];
+	struct net_device *dev = ch->devs;
 	struct xrx200_priv *priv = netdev_priv(dev);
 	struct ltq_dma_desc *desc = &ch->dma.desc_base[ch->dma.desc];
 	struct sk_buff *skb = ch->skb[ch->dma.desc];
@@ -378,9 +365,7 @@ static void xrx200_hw_receive(struct xrx200_chan *ch, int id)
 	}
 
 	skb_put(skb, len);
-#ifdef SW_ROUTING
 	skb_pull(skb, 8);
-#endif
 	skb->dev = dev;
 	skb->protocol = eth_type_trans(skb, dev);
 	netif_receive_skb(skb);
@@ -392,21 +377,17 @@ static int xrx200_poll_rx(struct napi_struct *napi, int budget)
 {
 	struct xrx200_chan *ch = container_of(napi,
 				struct xrx200_chan, napi);
-	struct xrx200_priv *priv = netdev_priv(ch->devs[0]);
+	struct xrx200_priv *priv = netdev_priv(ch->devs);
 	int rx = 0;
 	int complete = 0;
 
 	while ((rx < budget) && !complete) {
 		struct ltq_dma_desc *desc = &ch->dma.desc_base[ch->dma.desc];
 		if ((desc->ctl & (LTQ_DMA_OWN | LTQ_DMA_C)) == LTQ_DMA_C) {
-#ifdef SW_ROUTING
 			struct sk_buff *skb = ch->skb[ch->dma.desc];
 			u8 *special_tag = (u8*)skb->data;
 			int port = (special_tag[7] >> SPPID_SHIFT) & SPPID_MASK;
-			xrx200_hw_receive(ch, priv->hw->port_map[port]);
-#else
-			xrx200_hw_receive(ch, 0);
-#endif
+			xrx200_hw_receive(ch);
 			rx++;
 		} else {
 			complete = 1;
@@ -425,7 +406,6 @@ static void xrx200_tx_housekeeping(unsigned long ptr)
 {
 	struct xrx200_chan *ch = (struct xrx200_chan *) ptr;
 	int pkts = 0;
-	int i;
 
 	spin_lock_bh(&ch->lock);
 	ltq_dma_ack_irq(&ch->dma);
@@ -446,8 +426,7 @@ static void xrx200_tx_housekeeping(unsigned long ptr)
 	if (!pkts)
 		return;
 
-	for (i = 0; i < XRX200_MAX_DEV && ch->devs[i]; i++)
-		netif_wake_queue(ch->devs[i]);
+	netif_wake_queue(ch->devs);
 }
 
 static struct net_device_stats *xrx200_get_stats (struct net_device *dev)
@@ -475,50 +454,17 @@ static int xrx200_start_xmit(struct sk_buff *skb, struct net_device *dev)
 	u32 byte_offset;
 	int ret = NETDEV_TX_OK;
 	int len;
-#ifdef SW_ROUTING
 	u32 special_tag = (SPID_CPU_PORT << SPID_SHIFT) | DPID_ENABLE;
-#endif
-	if(priv->id)
-		ch = &priv->hw->chan[XRX200_DMA_TX_2];
-	else
-		ch = &priv->hw->chan[XRX200_DMA_TX];
 
-	desc = &ch->dma.desc_base[ch->dma.desc];
-
-	skb->dev = dev;
-	len = skb->len < ETH_ZLEN ? ETH_ZLEN : skb->len;
-
-#ifdef SW_ROUTING
-	if (is_multicast_ether_addr(eth_hdr(skb)->h_dest)) {
-		u16 port_map = priv->port_map;
-
-		if (priv->sw && skb->protocol == htons(ETH_P_8021Q)) {
-			u16 vid;
-			int i;
-
-			port_map = 0;
-			if (!__vlan_get_tag(skb, &vid)) {
-				for (i = 0; i < XRX200_MAX_VLAN; i++) {
-					if (priv->hw->vlan_vid[i] != vid)
-						continue;
-					port_map = priv->hw->vlan_port_map[i];
-					break;
-				}
-			}
-		}
-
-		special_tag |= (port_map << PORT_MAP_SHIFT) |
-			       PORT_MAP_SEL | PORT_MAP_EN;
-	}
 	if(skb_headroom(skb) < 4) {
 		struct sk_buff *tmp = skb_realloc_headroom(skb, 4);
 		dev_kfree_skb_any(skb);
 		skb = tmp;
 	}
+
 	skb_push(skb, 4);
 	memcpy(skb->data, &special_tag, sizeof(u32));
 	len += 4;
-#endif
 
 	/* dma needs to start on a 16 byte aligned address */
 	byte_offset = CPHYSADDR(skb->data) % 16;
@@ -909,17 +855,10 @@ static void xrx200_hw_init(struct xrx200_hw *hw)
 	/* set IPG to 12 */
 	ltq_pmac_w32_mask(PMAC_IPG_MASK, 0xb, PMAC_RX_IPG);
 
-#ifdef SW_ROUTING
 	/* enable status header, enable CRC */
 	ltq_pmac_w32_mask(0,
 		PMAC_HD_CTL_RST | PMAC_HD_CTL_AST | PMAC_HD_CTL_RXSH | PMAC_HD_CTL_AS | PMAC_HD_CTL_AC | PMAC_HD_CTL_RC,
 		PMAC_HD_CTL);
-#else
-	/* disable status header, enable CRC */
-	ltq_pmac_w32_mask(PMAC_HD_CTL_AST | PMAC_HD_CTL_RXSH | PMAC_HD_CTL_AS,
-		PMAC_HD_CTL_AC | PMAC_HD_CTL_RC,
-		PMAC_HD_CTL);
-#endif
 }
 
 static void xrx200_hw_cleanup(struct xrx200_hw *hw)
@@ -1002,9 +941,6 @@ static void xrx200_of_port(struct xrx200_priv *priv, struct device_node *port)
 		}
 
 	priv->port_map |= BIT(p->num);
-
-	/* store the port id in the hw struct so we can map ports -> devices */
-	priv->hw->port_map[p->num] = priv->hw->num_devs;
 }
 
 static const struct net_device_ops xrx200_netdev_ops = {
@@ -1019,28 +955,28 @@ static const struct net_device_ops xrx200_netdev_ops = {
 	.ndo_tx_timeout		= xrx200_tx_timeout,
 };
 
-static void xrx200_of_iface(struct xrx200_hw *hw, struct device_node *iface, struct device *dev)
+static void xrx200_of_iface(struct xrx200_hw *hw, struct device *dev)
 {
+	struct device_node *iface = dev->of_node;
 	struct xrx200_priv *priv;
 	struct device_node *port;
 	const u8 *mac;
 
 	/* alloc the network device */
-	hw->devs[hw->num_devs] = alloc_etherdev(sizeof(struct xrx200_priv));
-	if (!hw->devs[hw->num_devs])
+	hw->devs = alloc_etherdev(sizeof(struct xrx200_priv));
+	if (!hw->devs)
 		return;
 
 	/* setup the network device */
-	strcpy(hw->devs[hw->num_devs]->name, "eth%d");
-	hw->devs[hw->num_devs]->netdev_ops = &xrx200_netdev_ops;
-	hw->devs[hw->num_devs]->watchdog_timeo = XRX200_TX_TIMEOUT;
-	hw->devs[hw->num_devs]->needed_headroom = XRX200_HEADROOM;
-	SET_NETDEV_DEV(hw->devs[hw->num_devs], dev);
+	strcpy(hw->devs->name, "eth%d");
+	hw->devs->netdev_ops = &xrx200_netdev_ops;
+	hw->devs->watchdog_timeo = XRX200_TX_TIMEOUT;
+	hw->devs->needed_headroom = XRX200_HEADROOM;
+	SET_NETDEV_DEV(hw->devs, dev);
 
 	/* setup our private data */
-	priv = netdev_priv(hw->devs[hw->num_devs]);
+	priv = netdev_priv(hw->devs);
 	priv->hw = hw;
-	priv->id = hw->num_devs;
 
 	mac = of_get_mac_address(iface);
 	if (mac)
@@ -1056,8 +992,7 @@ static void xrx200_of_iface(struct xrx200_hw *hw, struct device_node *iface, str
 			xrx200_of_port(priv, port);
 
 	/* register the actual device */
-	if (!register_netdev(hw->devs[hw->num_devs]))
-		hw->num_devs++;
+	register_netdev(hw->devs);
 }
 
 static struct xrx200_hw xrx200_hw;
@@ -1065,7 +1000,7 @@ static struct xrx200_hw xrx200_hw;
 static int xrx200_probe(struct platform_device *pdev)
 {
 	struct resource *res[4];
-	struct device_node *mdio_np, *iface_np, *phy_np;
+	struct device_node *mdio_np, *phy_np;
 	struct of_phandle_iterator it;
 	int err;
 	int i;
@@ -1120,19 +1055,11 @@ static int xrx200_probe(struct platform_device *pdev)
 			dev_err(&pdev->dev, "mdio probe failed\n");
 
 
-	xrx200_of_iface(&xrx200_hw, iface_np, &pdev->dev);
+	xrx200_of_iface(&xrx200_hw, &pdev->dev);
 
-	if (!xrx200_hw.num_devs) {
-		xrx200_hw_cleanup(&xrx200_hw);
-		dev_err(&pdev->dev, "failed to load interfaces\n");
-		return -ENOENT;
-	}
-
-	for (i = 0; i < xrx200_hw.num_devs; i++) {
-		xrx200_hw.chan[XRX200_DMA_RX].devs[i] = xrx200_hw.devs[i];
-		xrx200_hw.chan[XRX200_DMA_TX].devs[i] = xrx200_hw.devs[i];
-		xrx200_hw.chan[XRX200_DMA_TX_2].devs[i] = xrx200_hw.devs[i];
-	}
+	xrx200_hw.chan[XRX200_DMA_RX].devs = xrx200_hw.devs;
+	xrx200_hw.chan[XRX200_DMA_TX].devs = xrx200_hw.devs;
+	xrx200_hw.chan[XRX200_DMA_TX_2].devs = xrx200_hw.devs;
 
 	/* setup NAPI */
 	init_dummy_netdev(&xrx200_hw.chan[XRX200_DMA_RX].dummy_dev);
