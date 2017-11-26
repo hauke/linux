@@ -229,7 +229,6 @@ struct xrx200_hw {
 	int num_devs;
 
 	int port_map[XRX200_MAX_PORT];
-	unsigned short wan_map;
 };
 
 struct xrx200_priv {
@@ -238,7 +237,6 @@ struct xrx200_priv {
 
 	struct xrx200_port port[XRX200_MAX_PORT];
 	int num_port;
-	bool wan;
 	bool sw;
 	unsigned short port_map;
 	unsigned char mac[6];
@@ -282,18 +280,6 @@ static __iomem void *xrx200_pmac_membase;
 	.type = SWITCH_TYPE_INT, \
 	.set = xrx200_set_port_attr, \
 	.get = xrx200_get_port_attr
-
-static void xrx200sw_write_x(int value, int reg, int x)
-{
-	int mask, addr;
-
-	addr = xrx200sw_reg[reg].offset + (xrx200sw_reg[reg].mult * x);
-	mask = (1 << xrx200sw_reg[reg].size) - 1;
-	mask = (mask << xrx200sw_reg[reg].shift);
-	value = (value << xrx200sw_reg[reg].shift) & mask;
-
-	ltq_switch_w32_mask(mask, value, addr);
-}
 
 static int xrx200_open(struct net_device *dev)
 {
@@ -524,8 +510,6 @@ static int xrx200_start_xmit(struct sk_buff *skb, struct net_device *dev)
 		special_tag |= (port_map << PORT_MAP_SHIFT) |
 			       PORT_MAP_SEL | PORT_MAP_EN;
 	}
-	if(priv->wan)
-		special_tag |= (1 << DPID_SHIFT);
 	if(skb_headroom(skb) < 4) {
 		struct sk_buff *tmp = skb_realloc_headroom(skb, 4);
 		dev_kfree_skb_any(skb);
@@ -917,65 +901,10 @@ err_netdev:
 	return err;
 }
 
-static void xrx200_pci_microcode(void)
-{
-	int i;
-
-	ltq_switch_w32_mask(PCE_TBL_CFG_ADDR_MASK | PCE_TBL_CFG_ADWR_MASK,
-		PCE_TBL_CFG_ADWR, PCE_TBL_CTRL);
-	ltq_switch_w32(0, PCE_TBL_MASK);
-
-	for (i = 0; i < ARRAY_SIZE(pce_microcode); i++) {
-		ltq_switch_w32(i, PCE_TBL_ADDR);
-		ltq_switch_w32(pce_microcode[i].val[3], PCE_TBL_VAL(0));
-		ltq_switch_w32(pce_microcode[i].val[2], PCE_TBL_VAL(1));
-		ltq_switch_w32(pce_microcode[i].val[1], PCE_TBL_VAL(2));
-		ltq_switch_w32(pce_microcode[i].val[0], PCE_TBL_VAL(3));
-
-		// start the table access:
-		ltq_switch_w32_mask(0, PCE_TBL_BUSY, PCE_TBL_CTRL);
-		while (ltq_switch_r32(PCE_TBL_CTRL) & PCE_TBL_BUSY);
-	}
-
-	/* tell the switch that the microcode is loaded */
-	ltq_switch_w32_mask(0, BIT(3), PCE_GCTRL_REG(0));
-}
-
 static void xrx200_hw_init(struct xrx200_hw *hw)
 {
-	int i;
-
 	/* enable clock gate */
 	clk_enable(hw->clk);
-
-
-	/* disable port fetch/store dma */
-	for (i = 0; i < 7; i++ ) {
-		ltq_switch_w32(0, FDMA_PCTRLx(i));
-		ltq_switch_w32(0, SDMA_PCTRLx(i));
-	}
-
-	/* enable Switch */
-	ltq_mdio_w32_mask(0, MDIO_GLOB_ENABLE, MDIO_GLOB);
-
-	/* load the pce microcode */
-	xrx200_pci_microcode();
-
-	/* Default unknown Broadcat/Multicast/Unicast port maps */
-	ltq_switch_w32(0x40, PCE_PMAP1);
-	ltq_switch_w32(0x40, PCE_PMAP2);
-	ltq_switch_w32(0x40, PCE_PMAP3);
-
-	/* RMON Counter Enable for all physical ports */
-	for (i = 0; i < 7; i++)
-		ltq_switch_w32(0x1, BM_PCFG(i));
-
-	/* disable auto polling */
-	ltq_mdio_w32(0x0, MDIO_CLK_CFG0);
-
-	/* enable port statistic counters */
-	for (i = 0; i < 7; i++)
-		ltq_switch_w32(0x1, BM_PCFGx(i));
 
 	/* set IPG to 12 */
 	ltq_pmac_w32_mask(PMAC_IPG_MASK, 0xb, PMAC_RX_IPG);
@@ -991,23 +920,6 @@ static void xrx200_hw_init(struct xrx200_hw *hw)
 		PMAC_HD_CTL_AC | PMAC_HD_CTL_RC,
 		PMAC_HD_CTL);
 #endif
-
-	/* enable port fetch/store dma & VLAN Modification */
-	for (i = 0; i < 7; i++ ) {
-		ltq_switch_w32_mask(0, 0x19, FDMA_PCTRLx(i));
-		ltq_switch_w32_mask(0, 0x01, SDMA_PCTRLx(i));
-		ltq_switch_w32_mask(0, PCE_INGRESS, PCE_PCTRL_REG(i, 0));
-	}
-
-	/* enable special tag insertion on cpu port */
-	ltq_switch_w32_mask(0, 0x02, FDMA_PCTRLx(6));
-	ltq_switch_w32_mask(0, PCE_INGRESS, PCE_PCTRL_REG(6, 0));
-	ltq_switch_w32_mask(0, BIT(3), MAC_CTRL_REG(6, 2));
-	ltq_switch_w32(1518 + 8 + 4 * 2, MAC_FLEN_REG);
-	xrx200sw_write_x(1, XRX200_BM_QUEUE_GCTRL_GL_MOD, 0);
-
-	for (i = 0; i < XRX200_MAX_VLAN; i++)
-		hw->vlan_vid[i] = i;
 }
 
 static void xrx200_hw_cleanup(struct xrx200_hw *hw)
@@ -1039,6 +951,7 @@ static void xrx200_hw_cleanup(struct xrx200_hw *hw)
 
 static int xrx200_of_mdio(struct xrx200_hw *hw, struct device_node *np)
 {
+	// devm_mdiobus_alloc_size()
 	hw->mii_bus = mdiobus_alloc();
 	if (!hw->mii_bus)
 		return -ENOMEM;
@@ -1087,9 +1000,6 @@ static void xrx200_of_port(struct xrx200_priv *priv, struct device_node *port)
 			udelay(100);
 			gpio_set_value(p->gpio, (p->gpio_flags & OF_GPIO_ACTIVE_LOW) ? (0) : (1));
 		}
-	/* is this port a wan port ? */
-	if (priv->wan)
-		priv->hw->wan_map |= BIT(p->num);
 
 	priv->port_map |= BIT(p->num);
 
@@ -1113,7 +1023,6 @@ static void xrx200_of_iface(struct xrx200_hw *hw, struct device_node *iface, str
 {
 	struct xrx200_priv *priv;
 	struct device_node *port;
-	const __be32 *wan;
 	const u8 *mac;
 
 	/* alloc the network device */
@@ -1136,11 +1045,6 @@ static void xrx200_of_iface(struct xrx200_hw *hw, struct device_node *iface, str
 	mac = of_get_mac_address(iface);
 	if (mac)
 		memcpy(priv->mac, mac, ETH_ALEN);
-
-	/* is this the wan interface ? */
-	wan = of_get_property(iface, "lantiq,wan", NULL);
-	if (wan && (*wan == 1))
-		priv->wan = 1;
 
 	/* should the switch be enabled on this interface ? */
 	if (of_find_property(iface, "lantiq,switch", NULL))
@@ -1215,25 +1119,14 @@ static int xrx200_probe(struct platform_device *pdev)
 		if (xrx200_of_mdio(&xrx200_hw, mdio_np))
 			dev_err(&pdev->dev, "mdio probe failed\n");
 
-	/* load the interfaces */
-	for_each_child_of_node(pdev->dev.of_node, iface_np)
-		if (of_device_is_compatible(iface_np, "lantiq,xrx200-pdi")) {
-			if (xrx200_hw.num_devs < XRX200_MAX_DEV)
-				xrx200_of_iface(&xrx200_hw, iface_np, &pdev->dev);
-			else
-				dev_err(&pdev->dev,
-					"only %d interfaces allowed\n",
-					XRX200_MAX_DEV);
-		}
+
+	xrx200_of_iface(&xrx200_hw, iface_np, &pdev->dev);
 
 	if (!xrx200_hw.num_devs) {
 		xrx200_hw_cleanup(&xrx200_hw);
 		dev_err(&pdev->dev, "failed to load interfaces\n");
 		return -ENOENT;
 	}
-
-	/* set wan port mask */
-	ltq_pmac_w32(xrx200_hw.wan_map, PMAC_EWAN);
 
 	for (i = 0; i < xrx200_hw.num_devs; i++) {
 		xrx200_hw.chan[XRX200_DMA_RX].devs[i] = xrx200_hw.devs[i];
