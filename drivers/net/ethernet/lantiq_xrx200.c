@@ -913,41 +913,6 @@ static int xrx200_of_mdio(struct xrx200_hw *hw, struct device_node *np)
 	return 0;
 }
 
-static void xrx200_of_port(struct xrx200_priv *priv, struct device_node *port)
-{
-	const __be32 *addr, *id = of_get_property(port, "reg", NULL);
-	struct xrx200_port *p = &priv->port[priv->num_port];
-
-	if (!id)
-		return;
-
-	memset(p, 0, sizeof(struct xrx200_port));
-	p->phy_node = of_parse_phandle(port, "phy-handle", 0);
-	addr = of_get_property(p->phy_node, "reg", NULL);
-	if (!addr)
-		return;
-
-	p->num = *id;
-	p->phy_addr = *addr;
-	p->phy_if = of_get_phy_mode(port);
-	if (p->phy_addr > 0x10)
-		p->flags = XRX200_PORT_TYPE_MAC;
-	else
-		p->flags = XRX200_PORT_TYPE_PHY;
-	priv->num_port++;
-
-	p->gpio = of_get_gpio_flags(port, 0, &p->gpio_flags);
-	if (gpio_is_valid(p->gpio))
-		if (!gpio_request(p->gpio, "phy-reset")) {
-			gpio_direction_output(p->gpio,
-				(p->gpio_flags & OF_GPIO_ACTIVE_LOW) ? (1) : (0));
-			udelay(100);
-			gpio_set_value(p->gpio, (p->gpio_flags & OF_GPIO_ACTIVE_LOW) ? (0) : (1));
-		}
-
-	priv->port_map |= BIT(p->num);
-}
-
 static const struct net_device_ops xrx200_netdev_ops = {
 	.ndo_init		= xrx200_init,
 	.ndo_open		= xrx200_open,
@@ -986,15 +951,6 @@ static void xrx200_of_iface(struct xrx200_hw *hw, struct device *dev)
 	mac = of_get_mac_address(iface);
 	if (mac)
 		memcpy(priv->mac, mac, ETH_ALEN);
-
-	/* should the switch be enabled on this interface ? */
-	if (of_find_property(iface, "lantiq,switch", NULL))
-		priv->sw = 1;
-
-	/* load the ports that are part of the interface */
-	for_each_child_of_node(iface, port)
-		if (of_device_is_compatible(port, "lantiq,xrx200-pdi-port"))
-			xrx200_of_port(priv, port);
 
 	/* register the actual device */
 	register_netdev(hw->devs);
