@@ -93,6 +93,7 @@ static struct sk_buff *gswip_tag_rcv(struct sk_buff *skb, struct net_device *dev
 {
 	struct dsa_switch_tree *dst = dev->dsa_ptr;
 	struct dsa_switch *ds;
+	int port;
 	u8 *gswip_tag;
 
 	if (unlikely(!pskb_may_pull(skb, GSWIP_RX_HEADER_LEN)))
@@ -118,7 +119,7 @@ static struct sk_buff *gswip_tag_rcv(struct sk_buff *skb, struct net_device *dev
 	return skb;
 }
 
-const struct dsa_device_ops gswip_netdev_ops {
+const struct dsa_device_ops gswip_netdev_ops = {
 	.xmit = gswip_tag_xmit,
 	.rcv = gswip_tag_rcv,
 };
