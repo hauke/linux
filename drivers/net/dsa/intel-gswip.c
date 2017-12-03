@@ -300,7 +300,7 @@ static int xrx200_mdio_rd(struct mii_bus *bus, int addr, int reg)
 	return gswip_mdio_r32(priv, MDIO_READ);
 }
 
-static int gswip_mdio(struct gswip_priv *priv)
+static int gswip_mdio(struct gswip_priv *priv, struct device_node *mdio_np)
 {
 	struct dsa_switch *ds = priv->ds;
 
@@ -316,7 +316,7 @@ static int gswip_mdio(struct gswip_priv *priv)
 	ds->slave_mii_bus->parent = priv->dev;
 	ds->slave_mii_bus->phy_mask = ~ds->phys_mii_mask;
 
-	if (of_mdiobus_register(ds->slave_mii_bus, priv->dev->of_node))
+	if (of_mdiobus_register(ds->slave_mii_bus, mdio_np))
 		return -ENXIO;
 
 	return 0;
@@ -456,6 +456,7 @@ static int gswip_probe(struct platform_device *pdev)
 {
 	struct gswip_priv *priv;
 	struct resource *gswip_res, *mdio_res, *mii_res;
+	struct device_node *mdio_np;
 	int err;
 
 	priv = devm_kzalloc(&pdev->dev, sizeof(*priv), GFP_KERNEL);
@@ -485,13 +486,20 @@ static int gswip_probe(struct platform_device *pdev)
 	priv->ds->ops = &gswip_switch_ops;
 	priv->dev = &pdev->dev;
 
-	err = gswip_mdio(priv);
-	if (err)
-		return err;
+	/* bring up the mdio bus */
+	mdio_np = of_find_compatible_node(pdev->dev.of_node, NULL,
+				"lantiq,xrx200-mdio");
+	if (mdio_np)
+		if (gswip_mdio(priv, mdio_np))
+			dev_err(&pdev->dev, "mdio probe failed\n");
 
 	platform_set_drvdata(pdev, priv);
 
-	return dsa_register_switch(priv->ds);
+	err = dsa_register_switch(priv->ds);
+	if (err && mdio_np)
+		mdiobus_unregister(priv->ds->slave_mii_bus);
+
+	return err;
 }
 
 static int gswip_remove(struct platform_device *pdev)
