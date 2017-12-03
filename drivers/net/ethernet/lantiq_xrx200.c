@@ -230,15 +230,9 @@ struct xrx200_priv {
 	struct xrx200_hw *hw;
 };
 
-static __iomem void *xrx200_switch_membase;
 static __iomem void *xrx200_mii_membase;
 static __iomem void *xrx200_mdio_membase;
 static __iomem void *xrx200_pmac_membase;
-
-#define ltq_switch_r32(x)	ltq_r32(xrx200_switch_membase + (x))
-#define ltq_switch_w32(x, y)	ltq_w32(x, xrx200_switch_membase + (y))
-#define ltq_switch_w32_mask(x, y, z) \
-			ltq_w32_mask(x, y, xrx200_switch_membase + (z))
 
 #define ltq_mdio_r32(x)		ltq_r32(xrx200_mdio_membase + (x))
 #define ltq_mdio_w32(x, y)	ltq_w32(x, xrx200_mdio_membase + (y))
@@ -974,11 +968,10 @@ static int xrx200_probe(struct platform_device *pdev)
 			return -ENOENT;
 		}
 	}
-	xrx200_switch_membase = devm_ioremap_resource(&pdev->dev, res[0]);
 	xrx200_mdio_membase = devm_ioremap_resource(&pdev->dev, res[1]);
 	xrx200_mii_membase = devm_ioremap_resource(&pdev->dev, res[2]);
 	xrx200_pmac_membase = devm_ioremap_resource(&pdev->dev, res[3]);
-	if (!xrx200_switch_membase || !xrx200_mdio_membase ||
+	if (!xrx200_mdio_membase ||
 			!xrx200_mii_membase || !xrx200_pmac_membase) {
 		dev_err(&pdev->dev, "failed to request and remap io ranges \n");
 		return -ENOMEM;
