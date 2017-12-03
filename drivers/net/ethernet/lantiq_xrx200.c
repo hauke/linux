@@ -954,23 +954,23 @@ static struct xrx200_hw xrx200_hw;
 
 static int xrx200_probe(struct platform_device *pdev)
 {
-	struct resource *res[4];
+	struct resource *res[3];
 	struct device_node *mdio_np, *phy_np;
 	struct of_phandle_iterator it;
 	int err;
 	int i;
 
 	/* load the memory ranges */
-	for (i = 0; i < 4; i++) {
+	for (i = 0; i < 3; i++) {
 		res[i] = platform_get_resource(pdev, IORESOURCE_MEM, i);
 		if (!res[i]) {
 			dev_err(&pdev->dev, "failed to get resources\n");
 			return -ENOENT;
 		}
 	}
-	xrx200_mdio_membase = devm_ioremap_resource(&pdev->dev, res[1]);
-	xrx200_mii_membase = devm_ioremap_resource(&pdev->dev, res[2]);
-	xrx200_pmac_membase = devm_ioremap_resource(&pdev->dev, res[3]);
+	xrx200_mdio_membase = devm_ioremap_resource(&pdev->dev, res[0]);
+	xrx200_mii_membase = devm_ioremap_resource(&pdev->dev, res[1]);
+	xrx200_pmac_membase = devm_ioremap_resource(&pdev->dev, res[2]);
 	if (!xrx200_mdio_membase ||
 			!xrx200_mii_membase || !xrx200_pmac_membase) {
 		dev_err(&pdev->dev, "failed to request and remap io ranges \n");
