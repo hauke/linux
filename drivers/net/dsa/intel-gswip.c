@@ -16,25 +16,20 @@
  *   Copyright (C) 2012 John Crispin <blogic@openwrt.org>
  */
 
-#include <linux/switch.h>
 #include <linux/etherdevice.h>
 #include <linux/module.h>
 #include <linux/platform_device.h>
 #include <linux/interrupt.h>
 #include <linux/clk.h>
 #include <linux/if_vlan.h>
-#include <asm/delay.h>
+#include <linux/delay.h>
+#include <net/dsa.h>
 
 #include <linux/of_net.h>
 #include <linux/of_mdio.h>
 #include <linux/of_gpio.h>
 #include <linux/of_platform.h>
 
-#include <xway_dma.h>
-#include <lantiq_soc.h>
-
-#include "lantiq_pce.h"
-#include "lantiq_xrx200_sw.h"
 
 #define SW_POLLING
 #define SW_ROUTING
@@ -188,6 +183,10 @@
 #define MDIO_DEVAD_NONE		(-1)
 #define ADVERTIZE_MPD		(1 << 10)
 
+
+#define GSWIP_BM_QUEUE_GCTRL		0x0128
+#define  GSWIP_BM_QUEUE_GCTRL_GL_MOD	BIT(10)
+
 struct gswip_priv {
 	__iomem void *gswip;
 	struct dsa_switch *ds;
@@ -213,15 +212,13 @@ static void gswip_switch_w32_mask(struct gswip_priv *priv, u32 clear, u32 set, u
 	gswip_switch_w32(priv, val, offset);
 }
 
-static void xrx200_hw_init(struct gswip_priv *priv)
+static int gswip_setup(struct dsa_switch *ds)
 {
+	struct gswip_priv *priv = (struct gswip_priv *)ds->priv;
 	int i;
 
-	/* enable clock gate */
-	clk_enable(hw->clk);
-
 	gswip_switch_w32(priv, 1, 0);
-	mdelay(100);
+	msleep(100);
 	gswip_switch_w32(priv, 0, 0);
 	/*
 	 * TODO: we should really disbale all phys/miis here and explicitly
@@ -259,12 +256,10 @@ static void xrx200_hw_init(struct gswip_priv *priv)
 	gswip_switch_w32_mask(priv, 0, PCE_INGRESS, PCE_PCTRL_REG(6, 0));
 	gswip_switch_w32_mask(priv, 0, BIT(3), MAC_CTRL_REG(6, 2));
 	gswip_switch_w32(priv, 1518 + 8 + 4 * 2, MAC_FLEN_REG);
-	xrx200sw_write_x(1, XRX200_BM_QUEUE_GCTRL_GL_MOD, 0);
+	gswip_switch_w32_mask(priv, 0, GSWIP_BM_QUEUE_GCTRL_GL_MOD, GSWIP_BM_QUEUE_GCTRL);
 
-	for (i = 0; i < XRX200_MAX_VLAN; i++)
-		hw->vlan_vid[i] = i;
+	return 0;
 }
-
 
 static enum dsa_tag_protocol gswip_get_tag_protocol(struct dsa_switch *ds)
 {
@@ -273,8 +268,8 @@ static enum dsa_tag_protocol gswip_get_tag_protocol(struct dsa_switch *ds)
 
 static const struct dsa_switch_ops gswip_switch_ops = {
 	.get_tag_protocol	= gswip_get_tag_protocol,
+	.setup			= gswip_setup,
 /*
-	.setup			= qca8k_setup,
 	.get_strings		= qca8k_get_strings,
 	.phy_read		= qca8k_phy_read,
 	.phy_write		= qca8k_phy_write,
@@ -293,17 +288,16 @@ static const struct dsa_switch_ops gswip_switch_ops = {
 */
 };
 
-static int xrx200_probe(struct platform_device *pdev)
+static int gswip_probe(struct platform_device *pdev)
 {
 	struct gswip_priv *priv;
 	struct resource *gswip_res;
-	u32 id;
 
 	priv = devm_kzalloc(&pdev->dev, sizeof(*priv), GFP_KERNEL);
 	if (!priv)
 		return -ENOMEM;
 
-	gswip_res = platform_get_resource(pdev, IORESOURCE_MEM, i);
+	gswip_res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	priv->gswip = devm_ioremap_resource(&pdev->dev, gswip_res);
 	if (!priv->gswip)
 		return -ENOMEM;
@@ -315,15 +309,12 @@ static int xrx200_probe(struct platform_device *pdev)
 	priv->ds->priv = priv;
 	priv->ds->ops = &gswip_switch_ops;
 
-	/* bring up the dma engine and IP core */
-	xrx200_hw_init(&priv);
-
 	platform_set_drvdata(pdev, priv);
 
 	return dsa_register_switch(priv->ds);
 }
 
-static int xrx200_remove(struct platform_device *pdev)
+static int gswip_remove(struct platform_device *pdev)
 {
 	struct gswip_priv *priv = platform_get_drvdata(pdev);
 
@@ -335,8 +326,8 @@ static int xrx200_remove(struct platform_device *pdev)
 	return 0;
 }
 
-static const struct of_device_id gswip_match[] = {
-	{ .compatible = "intel,gswip20" },
+static const struct of_device_id gswip_of_match[] = {
+	{ .compatible = "lantiq,xrx200-gswip" },
 	{},
 };
 MODULE_DEVICE_TABLE(of, xrx200_match);
