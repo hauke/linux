@@ -189,8 +189,10 @@
 
 struct gswip_priv {
 	__iomem void *gswip;
+	__iomem void *mdio;
+	__iomem void *mii;
 	struct dsa_switch *ds;
-	
+	struct device *dev;	
 };
 
 static u32 gswip_switch_r32(struct gswip_priv *priv, u32 offset)
@@ -212,6 +214,114 @@ static void gswip_switch_w32_mask(struct gswip_priv *priv, u32 clear, u32 set, u
 	gswip_switch_w32(priv, val, offset);
 }
 
+static u32 gswip_mdio_r32(struct gswip_priv *priv, u32 offset)
+{
+	return __raw_readl(priv->mdio + offset);
+}
+
+static void gswip_mdio_w32(struct gswip_priv *priv, u32 val, u32 offset)
+{
+	return __raw_writel(val, priv->mdio + offset);
+}
+
+static void gswip_mdio_w32_mask(struct gswip_priv *priv, u32 clear, u32 set, u32 offset)
+{
+	u32 val = gswip_mdio_r32(priv, offset);
+
+	val &= ~(clear);
+	val |= set;
+	gswip_mdio_w32(priv, val, offset);
+}
+
+static u32 gswip_mii_r32(struct gswip_priv *priv, u32 offset)
+{
+	return __raw_readl(priv->mii + offset);
+}
+
+static void gswip_mii_w32(struct gswip_priv *priv, u32 val, u32 offset)
+{
+	return __raw_writel(val, priv->mii + offset);
+}
+
+static void gswip_mii_w32_mask(struct gswip_priv *priv, u32 clear, u32 set, u32 offset)
+{
+	u32 val = gswip_mii_r32(priv, offset);
+
+	val &= ~(clear);
+	val |= set;
+	gswip_mii_w32(priv, val, offset);
+}
+
+
+static inline int xrx200_mdio_poll(struct gswip_priv *priv)
+{
+	unsigned cnt = 10000;
+
+	while (likely(cnt--)) {
+		unsigned ctrl = gswip_mdio_r32(priv, MDIO_CTRL);
+		if ((ctrl & MDIO_BUSY) == 0)
+			return 0;
+	}
+
+	return 1;
+}
+
+static int xrx200_mdio_wr(struct mii_bus *bus, int addr, int reg, u16 val)
+{
+	struct gswip_priv *priv = bus->priv;
+
+	if (xrx200_mdio_poll(priv))
+		return 1;
+
+	gswip_mdio_w32(priv, val, MDIO_WRITE);
+	gswip_mdio_w32(priv, MDIO_BUSY | MDIO_WR |
+		((addr & MDIO_MASK) << MDIO_ADDRSHIFT) |
+		(reg & MDIO_MASK),
+		MDIO_CTRL);
+
+	return 0;
+}
+
+static int xrx200_mdio_rd(struct mii_bus *bus, int addr, int reg)
+{
+	struct gswip_priv *priv = bus->priv;
+
+	if (xrx200_mdio_poll(priv))
+		return -1;
+
+	gswip_mdio_w32(priv, MDIO_BUSY | MDIO_RD |
+		((addr & MDIO_MASK) << MDIO_ADDRSHIFT) |
+		(reg & MDIO_MASK),
+		MDIO_CTRL);
+
+	if (xrx200_mdio_poll(priv))
+		return -1;
+
+	return gswip_mdio_r32(priv, MDIO_READ);
+}
+
+static int gswip_mdio(struct gswip_priv *priv)
+{
+	struct dsa_switch *ds = priv->ds;
+
+	ds->slave_mii_bus = devm_mdiobus_alloc(priv->dev);
+	if (!ds->slave_mii_bus)
+		return -ENOMEM;
+
+	ds->slave_mii_bus->priv = priv;
+	ds->slave_mii_bus->read = xrx200_mdio_rd;
+	ds->slave_mii_bus->write = xrx200_mdio_wr;
+	ds->slave_mii_bus->name = "lantiq,xrx200-mdio";
+	snprintf(ds->slave_mii_bus->id, MII_BUS_ID_SIZE, "%x", 0);
+	ds->slave_mii_bus->parent = priv->dev;
+	ds->slave_mii_bus->phy_mask = ~ds->phys_mii_mask;
+
+	if (of_mdiobus_register(ds->slave_mii_bus, priv->dev->of_node))
+		return -ENXIO;
+
+	return 0;
+}
+
 static int gswip_setup(struct dsa_switch *ds)
 {
 	struct gswip_priv *priv = (struct gswip_priv *)ds->priv;
@@ -231,6 +341,9 @@ static int gswip_setup(struct dsa_switch *ds)
 		gswip_switch_w32(priv, 0, SDMA_PCTRLx(i));
 	}
 
+	/* enable Switch */
+	gswip_mdio_w32_mask(priv, 0, MDIO_GLOB_ENABLE, MDIO_GLOB);
+
 	/* Default unknown Broadcat/Multicast/Unicast port maps */
 	gswip_switch_w32(priv, 0x40, PCE_PMAP1);
 	gswip_switch_w32(priv, 0x40, PCE_PMAP2);
@@ -239,6 +352,9 @@ static int gswip_setup(struct dsa_switch *ds)
 	/* RMON Counter Enable for all physical ports */
 	for (i = 0; i < 7; i++)
 		gswip_switch_w32(priv, 0x1, BM_PCFG(i));
+
+	/* disable auto polling */
+	gswip_mdio_w32(priv, 0x0, MDIO_CLK_CFG0);
 
 	/* enable port statistic counters */
 	for (i = 0; i < 7; i++)
@@ -261,6 +377,53 @@ static int gswip_setup(struct dsa_switch *ds)
 	return 0;
 }
 
+static void gswip_adjust_link(struct dsa_switch *ds, int port, struct phy_device *phydev)
+{
+	struct gswip_priv *priv = (struct gswip_priv *)ds->priv;
+
+	u16 phyaddr = phydev->mdio.addr & MDIO_PHY_ADDR_MASK;
+	u16 miimode = gswip_mdio_r32(priv, MII_CFG(port)) & MII_CFG_MODE_MASK;
+	u16 miirate = 0;
+
+	switch (phydev->speed) {
+	case SPEED_1000:
+		phyaddr |= MDIO_PHY_SPEED_G1;
+		miirate = MII_CFG_RATE_M125;
+		break;
+
+	case SPEED_100:
+		phyaddr |= MDIO_PHY_SPEED_M100;
+		switch (miimode) {
+		case MII_CFG_MODE_RMIIM:
+		case MII_CFG_MODE_RMIIP:
+			miirate = MII_CFG_RATE_M50;
+			break;
+		default:
+			miirate = MII_CFG_RATE_M25;
+			break;
+		}
+		break;
+
+	default:
+		phyaddr |= MDIO_PHY_SPEED_M10;
+		miirate = MII_CFG_RATE_M2P5;
+		break;
+	}
+
+	if (phydev->link)
+		phyaddr |= MDIO_PHY_LINK_UP;
+	else
+		phyaddr |= MDIO_PHY_LINK_DOWN;
+
+	if (phydev->duplex == DUPLEX_FULL)
+		phyaddr |= MDIO_PHY_FDUP_EN;
+	else
+		phyaddr |= MDIO_PHY_FDUP_DIS;
+
+	gswip_mdio_w32_mask(priv, MDIO_UPDATE_MASK, phyaddr, MDIO_PHY(port));
+	gswip_mii_w32_mask(priv, MII_CFG_RATE_MASK, miirate, MII_CFG(port));
+}
+
 static enum dsa_tag_protocol gswip_get_tag_protocol(struct dsa_switch *ds)
 {
 	return DSA_TAG_PROTO_GSWIP;
@@ -269,7 +432,10 @@ static enum dsa_tag_protocol gswip_get_tag_protocol(struct dsa_switch *ds)
 static const struct dsa_switch_ops gswip_switch_ops = {
 	.get_tag_protocol	= gswip_get_tag_protocol,
 	.setup			= gswip_setup,
+	.adjust_link		= gswip_adjust_link,
 /*
+	.port_enable		= gswip_port_enable,
+	.port_disable		= gswip_port_disable,
 	.get_strings		= qca8k_get_strings,
 	.phy_read		= qca8k_phy_read,
 	.phy_write		= qca8k_phy_write,
@@ -277,8 +443,6 @@ static const struct dsa_switch_ops gswip_switch_ops = {
 	.get_sset_count		= qca8k_get_sset_count,
 	.get_mac_eee		= qca8k_get_mac_eee,
 	.set_mac_eee		= qca8k_set_mac_eee,
-	.port_enable		= qca8k_port_enable,
-	.port_disable		= qca8k_port_disable,
 	.port_stp_state_set	= qca8k_port_stp_state_set,
 	.port_bridge_join	= qca8k_port_bridge_join,
 	.port_bridge_leave	= qca8k_port_bridge_leave,
@@ -291,7 +455,8 @@ static const struct dsa_switch_ops gswip_switch_ops = {
 static int gswip_probe(struct platform_device *pdev)
 {
 	struct gswip_priv *priv;
-	struct resource *gswip_res;
+	struct resource *gswip_res, *mdio_res, *mii_res;
+	int err;
 
 	priv = devm_kzalloc(&pdev->dev, sizeof(*priv), GFP_KERNEL);
 	if (!priv)
@@ -302,12 +467,27 @@ static int gswip_probe(struct platform_device *pdev)
 	if (!priv->gswip)
 		return -ENOMEM;
 
+	mdio_res = platform_get_resource(pdev, IORESOURCE_MEM, 1);
+	priv->mdio = devm_ioremap_resource(&pdev->dev, mdio_res);
+	if (!priv->mdio)
+		return -ENOMEM;
+
+	mii_res = platform_get_resource(pdev, IORESOURCE_MEM, 2);
+	priv->mii = devm_ioremap_resource(&pdev->dev, mii_res);
+	if (!priv->mii)
+		return -ENOMEM;
+
 	priv->ds = dsa_switch_alloc(&pdev->dev, DSA_MAX_PORTS);
 	if (!priv->ds)
 		return -ENOMEM;
 
 	priv->ds->priv = priv;
 	priv->ds->ops = &gswip_switch_ops;
+	priv->dev = &pdev->dev;
+
+	err = gswip_mdio(priv);
+	if (err)
+		return err;
 
 	platform_set_drvdata(pdev, priv);
 
@@ -321,7 +501,12 @@ static int gswip_remove(struct platform_device *pdev)
 	if (!priv)
 		return 0;
 
+	/* disable the switch */
+	gswip_mdio_w32_mask(priv, MDIO_GLOB_ENABLE, 0, MDIO_GLOB);
+
 	dsa_unregister_switch(priv->ds);
+
+	mdiobus_unregister(priv->ds->slave_mii_bus);
 
 	return 0;
 }
