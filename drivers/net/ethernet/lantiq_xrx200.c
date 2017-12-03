@@ -230,19 +230,7 @@ struct xrx200_priv {
 	struct xrx200_hw *hw;
 };
 
-static __iomem void *xrx200_mii_membase;
-static __iomem void *xrx200_mdio_membase;
 static __iomem void *xrx200_pmac_membase;
-
-#define ltq_mdio_r32(x)		ltq_r32(xrx200_mdio_membase + (x))
-#define ltq_mdio_w32(x, y)	ltq_w32(x, xrx200_mdio_membase + (y))
-#define ltq_mdio_w32_mask(x, y, z) \
-			ltq_w32_mask(x, y, xrx200_mdio_membase + (z))
-
-#define ltq_mii_r32(x)		ltq_r32(xrx200_mii_membase + (x))
-#define ltq_mii_w32(x, y)	ltq_w32(x, xrx200_mii_membase + (y))
-#define ltq_mii_w32_mask(x, y, z) \
-			ltq_w32_mask(x, y, xrx200_mii_membase + (z))
 
 #define ltq_pmac_r32(x)		ltq_r32(xrx200_pmac_membase + (x))
 #define ltq_pmac_w32(x, y)	ltq_w32(x, xrx200_pmac_membase + (y))
@@ -557,256 +545,11 @@ static int xrx200_dma_init(struct xrx200_hw *hw)
 	return err;
 }
 
-#ifdef SW_POLLING
-static void xrx200_gmac_update(struct xrx200_port *port)
-{
-	u16 phyaddr = port->phydev->mdio.addr & MDIO_PHY_ADDR_MASK;
-	u16 miimode = ltq_mii_r32(MII_CFG(port->num)) & MII_CFG_MODE_MASK;
-	u16 miirate = 0;
-
-	switch (port->phydev->speed) {
-	case SPEED_1000:
-		phyaddr |= MDIO_PHY_SPEED_G1;
-		miirate = MII_CFG_RATE_M125;
-		break;
-
-	case SPEED_100:
-		phyaddr |= MDIO_PHY_SPEED_M100;
-		switch (miimode) {
-		case MII_CFG_MODE_RMIIM:
-		case MII_CFG_MODE_RMIIP:
-			miirate = MII_CFG_RATE_M50;
-			break;
-		default:
-			miirate = MII_CFG_RATE_M25;
-			break;
-		}
-		break;
-
-	default:
-		phyaddr |= MDIO_PHY_SPEED_M10;
-		miirate = MII_CFG_RATE_M2P5;
-		break;
-	}
-
-	if (port->phydev->link)
-		phyaddr |= MDIO_PHY_LINK_UP;
-	else
-		phyaddr |= MDIO_PHY_LINK_DOWN;
-
-	if (port->phydev->duplex == DUPLEX_FULL)
-		phyaddr |= MDIO_PHY_FDUP_EN;
-	else
-		phyaddr |= MDIO_PHY_FDUP_DIS;
-
-	ltq_mdio_w32_mask(MDIO_UPDATE_MASK, phyaddr, MDIO_PHY(port->num));
-	ltq_mii_w32_mask(MII_CFG_RATE_MASK, miirate, MII_CFG(port->num));
-	udelay(1);
-}
-#else
-static void xrx200_gmac_update(struct xrx200_port *port)
-{
-
-}
-#endif
-
-static void xrx200_mdio_link(struct net_device *dev)
-{
-	struct xrx200_priv *priv = netdev_priv(dev);
-	bool link = false;
-	int i;
-
-	for (i = 0; i < priv->num_port; i++) {
-		if (!priv->port[i].phydev)
-			continue;
-
-		if (priv->port[i].phydev->link)
-			link = true;
-
-		if (priv->port[i].link != priv->port[i].phydev->link) {
-			xrx200_gmac_update(&priv->port[i]);
-			priv->port[i].link = priv->port[i].phydev->link;
-			netdev_info(dev, "port %d %s link\n",
-				priv->port[i].num,
-				(priv->port[i].link)?("got"):("lost"));
-		}
-	}
-	if (netif_carrier_ok(dev) && !link)
-		netif_carrier_off(dev);
-}
-
-static inline int xrx200_mdio_poll(struct mii_bus *bus)
-{
-	unsigned cnt = 10000;
-
-	while (likely(cnt--)) {
-		unsigned ctrl = ltq_mdio_r32(MDIO_CTRL);
-		if ((ctrl & MDIO_BUSY) == 0)
-			return 0;
-	}
-
-	return 1;
-}
-
-static int xrx200_mdio_wr(struct mii_bus *bus, int addr, int reg, u16 val)
-{
-	if (xrx200_mdio_poll(bus))
-		return 1;
-
-	ltq_mdio_w32(val, MDIO_WRITE);
-	ltq_mdio_w32(MDIO_BUSY | MDIO_WR |
-		((addr & MDIO_MASK) << MDIO_ADDRSHIFT) |
-		(reg & MDIO_MASK),
-		MDIO_CTRL);
-
-	return 0;
-}
-
-static int xrx200_mdio_rd(struct mii_bus *bus, int addr, int reg)
-{
-	if (xrx200_mdio_poll(bus))
-		return -1;
-
-	ltq_mdio_w32(MDIO_BUSY | MDIO_RD |
-		((addr & MDIO_MASK) << MDIO_ADDRSHIFT) |
-		(reg & MDIO_MASK),
-		MDIO_CTRL);
-
-	if (xrx200_mdio_poll(bus))
-		return -1;
-
-	return ltq_mdio_r32(MDIO_READ);
-}
-
-static void xrx200_phy_link_change(struct phy_device *phydev, bool up, bool do_carrier)
-{
-	struct net_device *netdev = phydev->attached_dev;
-
-	phydev->adjust_link(netdev);
-}
-
-static int xrx200_mdio_probe(struct net_device *dev, struct xrx200_port *port)
-{
-	struct xrx200_priv *priv = netdev_priv(dev);
-	struct phy_device *phydev = NULL;
-	unsigned val;
-
-	phydev = mdiobus_get_phy(priv->hw->mii_bus, port->phy_addr);
-
-	if (!phydev) {
-		netdev_err(dev, "no PHY found\n");
-		return -ENODEV;
-	}
-
-	phydev = phy_connect(dev, phydev_name(phydev), &xrx200_mdio_link,
-				port->phy_if);
-
-	if (IS_ERR(phydev)) {
-		netdev_err(dev, "Could not attach to PHY\n");
-		return PTR_ERR(phydev);
-	}
-
-	phydev->supported &= (SUPPORTED_10baseT_Half
-			| SUPPORTED_10baseT_Full
-			| SUPPORTED_100baseT_Half
-			| SUPPORTED_100baseT_Full
-			| SUPPORTED_1000baseT_Half
-			| SUPPORTED_1000baseT_Full
-			| SUPPORTED_Autoneg
-			| SUPPORTED_MII
-			| SUPPORTED_TP);
-	phydev->advertising = phydev->supported;
-	port->phydev = phydev;
-	phydev->phy_link_change = xrx200_phy_link_change;
-
-	phy_attached_info(phydev);
-
-#ifdef SW_POLLING
-	phy_read_status(phydev);
-
-	val = xrx200_mdio_rd(priv->hw->mii_bus, MDIO_DEVAD_NONE, MII_CTRL1000);
-	val |= ADVERTIZE_MPD;
-	xrx200_mdio_wr(priv->hw->mii_bus, MDIO_DEVAD_NONE, MII_CTRL1000, val);
-	xrx200_mdio_wr(priv->hw->mii_bus, 0, 0, 0x1040);
-
-	phy_start_aneg(phydev);
-#endif
-	return 0;
-}
-
-static void xrx200_port_config(struct xrx200_priv *priv,
-		const struct xrx200_port *port)
-{
-	u16 miimode = 0;
-
-	switch (port->num) {
-	case 0: /* xMII0 */
-	case 1: /* xMII1 */
-		switch (port->phy_if) {
-		case PHY_INTERFACE_MODE_MII:
-			if (port->flags & XRX200_PORT_TYPE_PHY)
-				/* MII MAC mode, connected to external PHY */
-				miimode = MII_CFG_MODE_MIIM;
-			else
-				/* MII PHY mode, connected to external MAC */
-				miimode = MII_CFG_MODE_MIIP;
-			break;
-		case PHY_INTERFACE_MODE_RMII:
-			if (port->flags & XRX200_PORT_TYPE_PHY)
-				/* RMII MAC mode, connected to external PHY */
-				miimode = MII_CFG_MODE_RMIIM;
-			else
-				/* RMII PHY mode, connected to external MAC */
-				miimode = MII_CFG_MODE_RMIIP;
-			break;
-		case PHY_INTERFACE_MODE_RGMII:
-			/* RGMII MAC mode, connected to external PHY */
-			miimode = MII_CFG_MODE_RGMII;
-			break;
-		default:
-			break;
-		}
-		break;
-	case 2: /* internal GPHY0 */
-	case 3: /* internal GPHY0 */
-	case 4: /* internal GPHY1 */
-		switch (port->phy_if) {
-			case PHY_INTERFACE_MODE_MII:
-			case PHY_INTERFACE_MODE_GMII:
-				/* MII MAC mode, connected to internal GPHY */
-				miimode = MII_CFG_MODE_MIIM;
-				break;
-			default:
-				break;
-		}
-		break;
-	case 5: /* internal GPHY1 or xMII2 */
-		switch (port->phy_if) {
-		case PHY_INTERFACE_MODE_MII:
-			/* MII MAC mode, connected to internal GPHY */
-			miimode = MII_CFG_MODE_MIIM;
-			break;
-		case PHY_INTERFACE_MODE_RGMII:
-			/* RGMII MAC mode, connected to external PHY */
-			miimode = MII_CFG_MODE_RGMII;
-			break;
-		default:
-			break;
-		}
-		break;
-	default:
-		break;
-	}
-
-	ltq_mii_w32_mask(MII_CFG_MODE_MASK, miimode | MII_CFG_EN,
-		MII_CFG(port->num));
-}
-
 static int xrx200_init(struct net_device *dev)
 {
 	struct xrx200_priv *priv = netdev_priv(dev);
 	struct sockaddr mac;
-	int err, i;
+	int err;
 
 #ifndef SW_POLLING
 	unsigned int reg = 0;
@@ -817,10 +560,6 @@ static int xrx200_init(struct net_device *dev)
 	ltq_mdio_w32(reg, MDIO_CLK_CFG0);
 	ltq_mdio_w32(MDIO1_25MHZ, MDIO_CLK_CFG1);
 #endif
-
-	/* setup each port */
-	for (i = 0; i < priv->num_port; i++)
-		xrx200_port_config(priv, &priv->port[i]);
 
 	memcpy(&mac.sa_data, priv->mac, ETH_ALEN);
 	if (!is_valid_ether_addr(mac.sa_data)) {
@@ -833,10 +572,6 @@ static int xrx200_init(struct net_device *dev)
 	if (err)
 		goto err_netdev;
 
-	for (i = 0; i < priv->num_port; i++)
-		if (xrx200_mdio_probe(dev, &priv->port[i]))
-			pr_warn("xrx200-mdio: probing phy of port %d failed\n",
-					 priv->port[i].num);
 
 	return 0;
 
@@ -864,8 +599,7 @@ static void xrx200_hw_cleanup(struct xrx200_hw *hw)
 {
 	int i;
 
-	/* disable the switch */
-	ltq_mdio_w32_mask(MDIO_GLOB_ENABLE, 0, MDIO_GLOB);
+
 
 	/* free the channels and IRQs */
 	for (i = 0; i < 2; i++) {
@@ -878,34 +612,11 @@ static void xrx200_hw_cleanup(struct xrx200_hw *hw)
 	for (i = 0; i < LTQ_DESC_NUM; i++)
 		dev_kfree_skb_any(hw->chan[XRX200_DMA_RX].skb[i]);
 
-	/* clear the mdio bus */
-	mdiobus_unregister(hw->mii_bus);
-	mdiobus_free(hw->mii_bus);
-
 	/* release the clock */
 	clk_disable(hw->clk);
 	clk_put(hw->clk);
 }
 
-static int xrx200_of_mdio(struct xrx200_hw *hw, struct device_node *np)
-{
-	// devm_mdiobus_alloc_size()
-	hw->mii_bus = mdiobus_alloc();
-	if (!hw->mii_bus)
-		return -ENOMEM;
-
-	hw->mii_bus->read = xrx200_mdio_rd;
-	hw->mii_bus->write = xrx200_mdio_wr;
-	hw->mii_bus->name = "lantiq,xrx200-mdio";
-	snprintf(hw->mii_bus->id, MII_BUS_ID_SIZE, "%x", 0);
-
-	if (of_mdiobus_register(hw->mii_bus, np)) {
-		mdiobus_free(hw->mii_bus);
-		return -ENXIO;
-	}
-
-	return 0;
-}
 
 static const struct net_device_ops xrx200_netdev_ops = {
 	.ndo_init		= xrx200_init,
@@ -923,7 +634,6 @@ static void xrx200_of_iface(struct xrx200_hw *hw, struct device *dev)
 {
 	struct device_node *iface = dev->of_node;
 	struct xrx200_priv *priv;
-	struct device_node *port;
 	const u8 *mac;
 
 	/* alloc the network device */
@@ -954,25 +664,20 @@ static struct xrx200_hw xrx200_hw;
 
 static int xrx200_probe(struct platform_device *pdev)
 {
-	struct resource *res[3];
-	struct device_node *mdio_np, *phy_np;
+	struct resource *res;
+	struct device_node *phy_np;
 	struct of_phandle_iterator it;
 	int err;
-	int i;
 
 	/* load the memory ranges */
-	for (i = 0; i < 3; i++) {
-		res[i] = platform_get_resource(pdev, IORESOURCE_MEM, i);
-		if (!res[i]) {
-			dev_err(&pdev->dev, "failed to get resources\n");
-			return -ENOENT;
-		}
+	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+	if (!res) {
+		dev_err(&pdev->dev, "failed to get resources\n");
+		return -ENOENT;
 	}
-	xrx200_mdio_membase = devm_ioremap_resource(&pdev->dev, res[0]);
-	xrx200_mii_membase = devm_ioremap_resource(&pdev->dev, res[1]);
-	xrx200_pmac_membase = devm_ioremap_resource(&pdev->dev, res[2]);
-	if (!xrx200_mdio_membase ||
-			!xrx200_mii_membase || !xrx200_pmac_membase) {
+
+	xrx200_pmac_membase = devm_ioremap_resource(&pdev->dev, res);
+	if (!xrx200_pmac_membase) {
 		dev_err(&pdev->dev, "failed to request and remap io ranges \n");
 		return -ENOMEM;
 	}
@@ -1000,14 +705,6 @@ static int xrx200_probe(struct platform_device *pdev)
 	xrx200_hw_init(&xrx200_hw);
 	tasklet_init(&xrx200_hw.chan[XRX200_DMA_TX].tasklet, xrx200_tx_housekeeping, (u32) &xrx200_hw.chan[XRX200_DMA_TX]);
 	tasklet_init(&xrx200_hw.chan[XRX200_DMA_TX_2].tasklet, xrx200_tx_housekeeping, (u32) &xrx200_hw.chan[XRX200_DMA_TX_2]);
-
-	/* bring up the mdio bus */
-	mdio_np = of_find_compatible_node(pdev->dev.of_node, NULL,
-				"lantiq,xrx200-mdio");
-	if (mdio_np)
-		if (xrx200_of_mdio(&xrx200_hw, mdio_np))
-			dev_err(&pdev->dev, "mdio probe failed\n");
-
 
 	xrx200_of_iface(&xrx200_hw, &pdev->dev);
 
