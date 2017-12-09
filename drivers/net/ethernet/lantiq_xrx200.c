@@ -346,7 +346,6 @@ static void xrx200_hw_receive(struct xrx200_chan *ch)
 	}
 
 	skb_put(skb, len);
-	skb_pull(skb, 8);
 	skb->dev = dev;
 	skb->protocol = eth_type_trans(skb, dev);
 	netif_receive_skb(skb);
@@ -364,9 +363,6 @@ static int xrx200_poll_rx(struct napi_struct *napi, int budget)
 	while ((rx < budget) && !complete) {
 		struct ltq_dma_desc *desc = &ch->dma.desc_base[ch->dma.desc];
 		if ((desc->ctl & (LTQ_DMA_OWN | LTQ_DMA_C)) == LTQ_DMA_C) {
-			struct sk_buff *skb = ch->skb[ch->dma.desc];
-			u8 *special_tag = (u8*)skb->data;
-			int port = (special_tag[7] >> SPPID_SHIFT) & SPPID_MASK;
 			xrx200_hw_receive(ch);
 			rx++;
 		} else {
@@ -434,7 +430,6 @@ static int xrx200_start_xmit(struct sk_buff *skb, struct net_device *dev)
 	u32 byte_offset;
 	int ret = NETDEV_TX_OK;
 	int len;
-	u32 special_tag = (SPID_CPU_PORT << SPID_SHIFT) | DPID_ENABLE;
 
 	ch = &priv->hw->chan[XRX200_DMA_TX];
 
@@ -442,16 +437,6 @@ static int xrx200_start_xmit(struct sk_buff *skb, struct net_device *dev)
 
 	skb->dev = dev;
 	len = skb->len < ETH_ZLEN ? ETH_ZLEN : skb->len;
-
-	if(skb_headroom(skb) < 4) {
-		struct sk_buff *tmp = skb_realloc_headroom(skb, 4);
-		dev_kfree_skb_any(skb);
-		skb = tmp;
-	}
-
-	skb_push(skb, 4);
-	memcpy(skb->data, &special_tag, sizeof(u32));
-	len += 4;
 
 	/* dma needs to start on a 16 byte aligned address */
 	byte_offset = CPHYSADDR(skb->data) % 16;
