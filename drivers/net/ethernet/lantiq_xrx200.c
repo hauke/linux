@@ -178,20 +178,6 @@
 #define MDIO_DEVAD_NONE		(-1)
 #define ADVERTIZE_MPD		(1 << 10)
 
-struct xrx200_port {
-	u8 num;
-	u8 phy_addr;
-	u16 flags;
-	phy_interface_t phy_if;
-
-	int link;
-	int gpio;
-	enum of_gpio_flags gpio_flags;
-
-	struct phy_device *phydev;
-	struct device_node *phy_node;
-};
-
 struct xrx200_chan {
 	int idx;
 	int refcount;
@@ -219,11 +205,9 @@ struct xrx200_hw {
 struct xrx200_priv {
 	struct net_device_stats stats;
 
-	struct xrx200_port port[XRX200_MAX_PORT];
 	int num_port;
 	bool sw;
 	unsigned short port_map;
-	unsigned char mac[6];
 
 	struct xrx200_hw *hw;
 };
@@ -264,9 +248,6 @@ static int xrx200_open(struct net_device *dev)
 		priv->hw->chan[i].refcount++;
 		spin_unlock_bh(&priv->hw->chan[i].lock);
 	}
-	for (i = 0; i < priv->num_port; i++)
-		if (priv->port[i].phydev)
-			phy_start(priv->port[i].phydev);
 	netif_wake_queue(dev);
 
 	return 0;
@@ -278,10 +259,6 @@ static int xrx200_close(struct net_device *dev)
 	int i;
 
 	netif_stop_queue(dev);
-
-	for (i = 0; i < priv->num_port; i++)
-		if (priv->port[i].phydev)
-			phy_stop(priv->port[i].phydev);
 
 	for (i = 0; i < XRX200_MAX_DMA; i++) {
 		if (!priv->hw->chan[i].dma.irq)
@@ -528,42 +505,6 @@ static int xrx200_dma_init(struct xrx200_hw *hw)
 	return err;
 }
 
-static int xrx200_init(struct net_device *dev)
-{
-	struct xrx200_priv *priv = netdev_priv(dev);
-	struct sockaddr mac;
-	int err;
-
-#ifndef SW_POLLING
-	unsigned int reg = 0;
-
-	/* enable auto polling */
-	for (i = 0; i < priv->num_port; i++)
-		reg |= BIT(priv->port[i].num);
-	ltq_mdio_w32(reg, MDIO_CLK_CFG0);
-	ltq_mdio_w32(MDIO1_25MHZ, MDIO_CLK_CFG1);
-#endif
-
-	memcpy(&mac.sa_data, priv->mac, ETH_ALEN);
-	if (!is_valid_ether_addr(mac.sa_data)) {
-		pr_warn("net-xrx200: invalid MAC, using random\n");
-		eth_random_addr(mac.sa_data);
-		dev->addr_assign_type |= NET_ADDR_RANDOM;
-	}
-
-	err = eth_mac_addr(dev, &mac);
-	if (err)
-		goto err_netdev;
-
-
-	return 0;
-
-err_netdev:
-	unregister_netdev(dev);
-	free_netdev(dev);
-	return err;
-}
-
 static void xrx200_hw_init(struct xrx200_hw *hw)
 {
 	/* enable clock gate */
@@ -581,8 +522,6 @@ static void xrx200_hw_init(struct xrx200_hw *hw)
 static void xrx200_hw_cleanup(struct xrx200_hw *hw)
 {
 	int i;
-
-
 
 	/* free the channels and IRQs */
 	for (i = 0; i < 2; i++) {
@@ -602,7 +541,6 @@ static void xrx200_hw_cleanup(struct xrx200_hw *hw)
 
 
 static const struct net_device_ops xrx200_netdev_ops = {
-	.ndo_init		= xrx200_init,
 	.ndo_open		= xrx200_open,
 	.ndo_stop		= xrx200_close,
 	.ndo_start_xmit		= xrx200_start_xmit,
@@ -637,7 +575,9 @@ static void xrx200_of_iface(struct xrx200_hw *hw, struct device *dev)
 
 	mac = of_get_mac_address(iface);
 	if (mac)
-		memcpy(priv->mac, mac, ETH_ALEN);
+		ether_addr_copy(hw->devs->dev_addr, mac);
+	else
+		eth_hw_addr_random(hw->devs);
 
 	/* register the actual device */
 	register_netdev(hw->devs);
