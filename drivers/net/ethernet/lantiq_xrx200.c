@@ -77,11 +77,8 @@
 
 
 struct xrx200_chan {
-	int idx;
 	int refcount;
 	int tx_free;
-
-	struct net_device *devs;
 
 	struct tasklet_struct tasklet;
 	struct napi_struct napi;
@@ -89,6 +86,7 @@ struct xrx200_chan {
 	struct sk_buff *skb[LTQ_DESC_NUM];
 
 	spinlock_t lock;
+	struct xrx200_priv *priv;
 };
 
 struct xrx200_priv {
@@ -193,8 +191,7 @@ skip:
 
 static void xrx200_hw_receive(struct xrx200_chan *ch)
 {
-	struct net_device *dev = ch->devs;
-	struct xrx200_priv *priv = netdev_priv(dev);
+	struct xrx200_priv *priv = ch->priv;
 	struct ltq_dma_desc *desc = &ch->dma.desc_base[ch->dma.desc];
 	struct sk_buff *skb = ch->skb[ch->dma.desc];
 	int len = (desc->ctl & LTQ_DMA_SIZE_MASK);
@@ -206,14 +203,14 @@ static void xrx200_hw_receive(struct xrx200_chan *ch)
 	ch->dma.desc %= LTQ_DESC_NUM;
 
 	if (ret) {
-		netdev_err(dev,
+		netdev_err(priv->net_dev,
 			"failed to allocate new rx buffer\n");
 		return;
 	}
 
 	skb_put(skb, len);
-	skb->dev = dev;
-	skb->protocol = eth_type_trans(skb, dev);
+	skb->dev = priv->net_dev;
+	skb->protocol = eth_type_trans(skb, priv->net_dev);
 	netif_receive_skb(skb);
 	priv->stats.rx_packets++;
 	priv->stats.rx_bytes+=len;
@@ -268,7 +265,7 @@ static void xrx200_tx_housekeeping(unsigned long ptr)
 	if (!pkts)
 		return;
 
-	netif_wake_queue(ch->devs);
+	netif_wake_queue(ch->priv->net_dev);
 }
 
 static struct net_device_stats *xrx200_get_stats (struct net_device *dev)
@@ -368,7 +365,8 @@ static int xrx200_dma_init(struct xrx200_priv *priv)
 
 		spin_lock_init(&ch->lock);
 
-		ch->idx = ch->dma.nr = i;
+		ch->dma.nr = i;
+		ch->priv = priv;
 
 		if (i == XRX200_DMA_TX) {
 			ltq_dma_alloc_tx(&ch->dma);
@@ -511,8 +509,7 @@ static int xrx200_probe(struct platform_device *pdev)
 	tasklet_init(&priv->chan[XRX200_DMA_TX_2].tasklet, xrx200_tx_housekeeping, (u32) &priv->chan[XRX200_DMA_TX_2]);
 
 	/* setup NAPI */
-	netif_napi_add(priv->chan[XRX200_DMA_RX].devs,
-			&priv->chan[XRX200_DMA_RX].napi, xrx200_poll_rx, 32);
+	netif_napi_add(net_dev, &priv->chan[XRX200_DMA_RX].napi, xrx200_poll_rx, 32);
 
 	platform_set_drvdata(pdev, priv);
 
