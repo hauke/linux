@@ -30,6 +30,8 @@
 #include <linux/of_gpio.h>
 #include <linux/of_platform.h>
 
+#include "lantiq_pce.h"
+
 
 #define SW_POLLING
 #define SW_ROUTING
@@ -322,6 +324,30 @@ static int gswip_mdio(struct gswip_priv *priv, struct device_node *mdio_np)
 	return 0;
 }
 
+static void xrx200_pci_microcode(struct gswip_priv *priv)
+{
+	int i;
+
+	gswip_switch_w32_mask(priv, PCE_TBL_CFG_ADDR_MASK | PCE_TBL_CFG_ADWR_MASK,
+		PCE_TBL_CFG_ADWR, PCE_TBL_CTRL);
+	gswip_switch_w32(priv, 0, PCE_TBL_MASK);
+
+	for (i = 0; i < ARRAY_SIZE(pce_microcode); i++) {
+		gswip_switch_w32(priv, i, PCE_TBL_ADDR);
+		gswip_switch_w32(priv, pce_microcode[i].val[3], PCE_TBL_VAL(0));
+		gswip_switch_w32(priv, pce_microcode[i].val[2], PCE_TBL_VAL(1));
+		gswip_switch_w32(priv, pce_microcode[i].val[1], PCE_TBL_VAL(2));
+		gswip_switch_w32(priv, pce_microcode[i].val[0], PCE_TBL_VAL(3));
+
+		// start the table access:
+		gswip_switch_w32_mask(priv, 0, PCE_TBL_BUSY, PCE_TBL_CTRL);
+		while (gswip_switch_r32(priv, PCE_TBL_CTRL) & PCE_TBL_BUSY);
+	}
+
+	/* tell the switch that the microcode is loaded */
+	gswip_switch_w32_mask(priv, 0, BIT(3), PCE_GCTRL_REG(0));
+}
+
 static int gswip_setup(struct dsa_switch *ds)
 {
 	struct gswip_priv *priv = (struct gswip_priv *)ds->priv;
@@ -343,6 +369,8 @@ static int gswip_setup(struct dsa_switch *ds)
 
 	/* enable Switch */
 	gswip_mdio_w32_mask(priv, 0, MDIO_GLOB_ENABLE, MDIO_GLOB);
+	
+	xrx200_pci_microcode(priv);
 
 	/* Default unknown Broadcat/Multicast/Unicast port maps */
 	gswip_switch_w32(priv, 0x40, PCE_PMAP1);

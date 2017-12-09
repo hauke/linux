@@ -32,8 +32,6 @@
 #include <xway_dma.h>
 #include <lantiq_soc.h>
 
-#include "lantiq_pce.h"
-#include "lantiq_xrx200_sw.h"
 
 #define SW_POLLING
 
