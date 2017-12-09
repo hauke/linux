@@ -380,10 +380,15 @@ static int gswip_setup(struct dsa_switch *ds)
 static void gswip_adjust_link(struct dsa_switch *ds, int port, struct phy_device *phydev)
 {
 	struct gswip_priv *priv = (struct gswip_priv *)ds->priv;
-
 	u16 phyaddr = phydev->mdio.addr & MDIO_PHY_ADDR_MASK;
-	u16 miimode = gswip_mdio_r32(priv, MII_CFG(port)) & MII_CFG_MODE_MASK;
 	u16 miirate = 0;
+	u16 miimode;
+
+	/* do not run this for the CPU port 6 */
+	if (port > 5)
+		return;
+
+	miimode = gswip_mdio_r32(priv, MII_CFG(port)) & MII_CFG_MODE_MASK;
 
 	switch (phydev->speed) {
 	case SPEED_1000:
