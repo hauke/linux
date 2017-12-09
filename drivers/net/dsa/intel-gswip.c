@@ -349,23 +349,19 @@ static int gswip_setup(struct dsa_switch *ds)
 	gswip_switch_w32(priv, 0x40, PCE_PMAP2);
 	gswip_switch_w32(priv, 0x40, PCE_PMAP3);
 
-	/* RMON Counter Enable for all physical ports */
-	for (i = 0; i < 7; i++)
-		gswip_switch_w32(priv, 0x1, BM_PCFG(i));
-
 	/* disable auto polling */
 	gswip_mdio_w32(priv, 0x0, MDIO_CLK_CFG0);
 
+	/* RMON Counter Enable for all physical ports */
+	gswip_switch_w32(priv, 0x1, BM_PCFG(6));
+
 	/* enable port statistic counters */
-	for (i = 0; i < 7; i++)
-		gswip_switch_w32(priv, 0x1, BM_PCFGx(i));
+	gswip_switch_w32(priv, 0x1, BM_PCFGx(6));
 
 	/* enable port fetch/store dma & VLAN Modification */
-	for (i = 0; i < 7; i++ ) {
-		gswip_switch_w32_mask(priv, 0, 0x19, FDMA_PCTRLx(i));
-		gswip_switch_w32_mask(priv, 0, 0x01, SDMA_PCTRLx(i));
-		gswip_switch_w32_mask(priv, 0, PCE_INGRESS, PCE_PCTRL_REG(i, 0));
-	}
+	gswip_switch_w32_mask(priv, 0, 0x19, FDMA_PCTRLx(6));
+	gswip_switch_w32_mask(priv, 0, 0x01, SDMA_PCTRLx(6));
+	gswip_switch_w32_mask(priv, 0, PCE_INGRESS, PCE_PCTRL_REG(6, 0));
 
 	/* enable special tag insertion on cpu port */
 	gswip_switch_w32_mask(priv, 0, 0x02, FDMA_PCTRLx(6));
@@ -429,6 +425,29 @@ static void gswip_adjust_link(struct dsa_switch *ds, int port, struct phy_device
 	gswip_mii_w32_mask(priv, MII_CFG_RATE_MASK, miirate, MII_CFG(port));
 }
 
+static int gswip_port_enable(struct dsa_switch *ds, int port, struct phy_device *phy)
+{
+	struct gswip_priv *priv = (struct gswip_priv *)ds->priv;
+
+	/* RMON Counter Enable for all physical ports */
+	gswip_switch_w32(priv, 0x1, BM_PCFG(port));
+
+	/* enable port statistic counters */
+	gswip_switch_w32(priv, 0x1, BM_PCFGx(port));
+
+	/* enable port fetch/store dma & VLAN Modification */
+	gswip_switch_w32_mask(priv, 0, 0x19, FDMA_PCTRLx(port));
+	gswip_switch_w32_mask(priv, 0, 0x01, SDMA_PCTRLx(port));
+	gswip_switch_w32_mask(priv, 0, PCE_INGRESS, PCE_PCTRL_REG(port, 0));
+
+	return 0;
+}
+
+static void gswip_port_disable(struct dsa_switch *ds, int port, struct phy_device *phy)
+{
+	struct gswip_priv *priv = (struct gswip_priv *)ds->priv;
+}
+
 static enum dsa_tag_protocol gswip_get_tag_protocol(struct dsa_switch *ds)
 {
 	return DSA_TAG_PROTO_GSWIP;
@@ -438,9 +457,10 @@ static const struct dsa_switch_ops gswip_switch_ops = {
 	.get_tag_protocol	= gswip_get_tag_protocol,
 	.setup			= gswip_setup,
 	.adjust_link		= gswip_adjust_link,
-/*
 	.port_enable		= gswip_port_enable,
 	.port_disable		= gswip_port_disable,
+/*
+
 	.get_strings		= qca8k_get_strings,
 	.phy_read		= qca8k_phy_read,
 	.phy_write		= qca8k_phy_write,
