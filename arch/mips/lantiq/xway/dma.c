@@ -23,6 +23,7 @@
 #include <linux/spinlock.h>
 #include <linux/clk.h>
 #include <linux/err.h>
+#include <linux/delay.h>
 
 #include <lantiq_soc.h>
 #include <xway_dma.h>
@@ -39,6 +40,7 @@
 #define LTQ_DMA_PS		0x40
 #define LTQ_DMA_PCTRL		0x44
 #define LTQ_DMA_IRNEN		0xf4
+#define LTQ_DMA_IRNCR		0xf8
 
 #define DMA_DESCPT		BIT(3)		/* descriptor complete irq */
 #define DMA_TX			BIT(8)		/* TX channel direction */
@@ -141,6 +143,7 @@ ltq_dma_alloc(struct ltq_dma_channel *ch)
 	ltq_dma_w32(LTQ_DESC_NUM, LTQ_DMA_CDLEN);
 	ltq_dma_w32_mask(DMA_CHAN_ON, 0, LTQ_DMA_CCTRL);
 	wmb();
+	udelay(20);
 	ltq_dma_w32_mask(0, DMA_CHAN_RST, LTQ_DMA_CCTRL);
 	while (ltq_dma_r32(LTQ_DMA_CCTRL) & DMA_CHAN_RST)
 		;
@@ -156,6 +159,7 @@ ltq_dma_alloc_tx(struct ltq_dma_channel *ch)
 
 	spin_lock_irqsave(&ltq_dma_lock, flags);
 	ltq_dma_w32(DMA_DESCPT, LTQ_DMA_CIE);
+	ltq_dma_w32(1 << ch->nr, LTQ_DMA_IRNCR);
 	ltq_dma_w32_mask(0, 1 << ch->nr, LTQ_DMA_IRNEN);
 	ltq_dma_w32(DMA_WEIGHT | DMA_TX, LTQ_DMA_CCTRL);
 	spin_unlock_irqrestore(&ltq_dma_lock, flags);
@@ -171,6 +175,7 @@ ltq_dma_alloc_rx(struct ltq_dma_channel *ch)
 
 	spin_lock_irqsave(&ltq_dma_lock, flags);
 	ltq_dma_w32(DMA_DESCPT, LTQ_DMA_CIE);
+	ltq_dma_w32(1 << ch->nr, LTQ_DMA_IRNCR);
 	ltq_dma_w32_mask(0, 1 << ch->nr, LTQ_DMA_IRNEN);
 	ltq_dma_w32(DMA_WEIGHT, LTQ_DMA_CCTRL);
 	spin_unlock_irqrestore(&ltq_dma_lock, flags);
