@@ -33,8 +33,6 @@
 #include <lantiq_soc.h>
 
 
-#define SW_POLLING
-
 #define XRX200_MAX_VLAN		64
 #define XRX200_PCE_ACTVLAN_IDX	0x01
 #define XRX200_PCE_VLANMAP_IDX	0x02
@@ -59,69 +57,6 @@
 #define XRX200_DMA_IS_TX(x)	(x%2)
 #define XRX200_DMA_IS_RX(x)	(!XRX200_DMA_IS_TX(x))
 
-/* fetch / store dma */
-#define FDMA_PCTRL0		0x2A00
-#define FDMA_PCTRLx(x)		(FDMA_PCTRL0 + (x * 0x18))
-#define SDMA_PCTRL0		0x2F00
-#define SDMA_PCTRLx(x)		(SDMA_PCTRL0 + (x * 0x18))
-
-/* buffer management */
-#define BM_PCFG0		0x200
-#define BM_PCFGx(x)		(BM_PCFG0 + (x * 8))
-
-/* MDIO */
-#define MDIO_GLOB		0x0000
-#define MDIO_CTRL		0x0020
-#define MDIO_READ		0x0024
-#define MDIO_WRITE		0x0028
-#define MDIO_PHY0		0x0054
-#define MDIO_PHY(x)		(0x0054 - (x * sizeof(unsigned)))
-#define MDIO_CLK_CFG0		0x002C
-#define MDIO_CLK_CFG1		0x0030
-
-#define MDIO_GLOB_ENABLE	0x8000
-#define MDIO_BUSY		BIT(12)
-#define MDIO_RD			BIT(11)
-#define MDIO_WR			BIT(10)
-#define MDIO_MASK		0x1f
-#define MDIO_ADDRSHIFT		5
-#define MDIO1_25MHZ		9
-
-#define MDIO_PHY_LINK_DOWN	0x4000
-#define MDIO_PHY_LINK_UP	0x2000
-
-#define MDIO_PHY_SPEED_M10	0x0000
-#define MDIO_PHY_SPEED_M100	0x0800
-#define MDIO_PHY_SPEED_G1	0x1000
-
-#define MDIO_PHY_FDUP_EN	0x0200
-#define MDIO_PHY_FDUP_DIS	0x0600
-
-#define MDIO_PHY_LINK_MASK	0x6000
-#define MDIO_PHY_SPEED_MASK	0x1800
-#define MDIO_PHY_FDUP_MASK	0x0600
-#define MDIO_PHY_ADDR_MASK	0x001f
-#define MDIO_UPDATE_MASK	MDIO_PHY_ADDR_MASK | MDIO_PHY_LINK_MASK | \
-					MDIO_PHY_SPEED_MASK | MDIO_PHY_FDUP_MASK
-
-/* MII */
-#define MII_CFG(p)		(p * 8)
-
-#define MII_CFG_EN		BIT(14)
-
-#define MII_CFG_MODE_MIIP	0x0
-#define MII_CFG_MODE_MIIM	0x1
-#define MII_CFG_MODE_RMIIP	0x2
-#define MII_CFG_MODE_RMIIM	0x3
-#define MII_CFG_MODE_RGMII	0x4
-#define MII_CFG_MODE_MASK	0xf
-
-#define MII_CFG_RATE_M2P5	0x00
-#define MII_CFG_RATE_M25	0x10
-#define MII_CFG_RATE_M125	0x20
-#define MII_CFG_RATE_M50	0x30
-#define MII_CFG_RATE_AUTO	0x40
-#define MII_CFG_RATE_MASK	0x70
 
 /* cpu port mac */
 #define PMAC_HD_CTL		0x0000
@@ -136,47 +71,10 @@
 #define PMAC_HD_CTL_AST		0x0080
 #define PMAC_HD_CTL_RST		0x0100
 
-/* PCE */
-#define PCE_TBL_KEY(x)		(0x1100 + ((7 - x) * 4))
-#define PCE_TBL_MASK		0x1120
-#define PCE_TBL_VAL(x)		(0x1124 + ((4 - x) * 4))
-#define PCE_TBL_ADDR		0x1138
-#define PCE_TBL_CTRL		0x113c
-#define PCE_PMAP1		0x114c
-#define PCE_PMAP2		0x1150
-#define PCE_PMAP3		0x1154
-#define PCE_GCTRL_REG(x)	(0x1158 + (x * 4))
-#define PCE_PCTRL_REG(p, x)	(0x1200 + (((p * 0xa) + x) * 4))
-
-#define PCE_TBL_BUSY		BIT(15)
-#define PCE_TBL_CFG_ADDR_MASK	0x1f
-#define PCE_TBL_CFG_ADWR	0x20
-#define PCE_TBL_CFG_ADWR_MASK	0x60
-#define PCE_INGRESS		BIT(11)
-
 /* MAC */
 #define MAC_FLEN_REG		(0x2314)
 #define MAC_CTRL_REG(p, x)	(0x240c + (((p * 0xc) + x) * 4))
 
-/* buffer management */
-#define BM_PCFG(p)		(0x200 + (p * 8))
-
-/* special tag in TX path header */
-#define SPID_SHIFT		24
-#define DPID_SHIFT		16
-#define DPID_ENABLE		1
-#define SPID_CPU_PORT		2
-#define PORT_MAP_SEL		BIT(15)
-#define PORT_MAP_EN		BIT(14)
-#define PORT_MAP_SHIFT		1
-#define PORT_MAP_MASK		0x3f
-
-#define SPPID_MASK		0x7
-#define SPPID_SHIFT		4
-
-/* MII regs not yet in linux */
-#define MDIO_DEVAD_NONE		(-1)
-#define ADVERTIZE_MPD		(1 << 10)
 
 struct xrx200_chan {
 	int idx;
@@ -193,43 +91,36 @@ struct xrx200_chan {
 	spinlock_t lock;
 };
 
-struct xrx200_hw {
-	struct clk *clk;
-	struct mii_bus *mii_bus;
-
-	struct xrx200_chan chan[XRX200_MAX_DMA];
-
-	struct net_device *devs;
-};
-
 struct xrx200_priv {
 	struct net_device_stats stats;
 
-	int num_port;
-	bool sw;
-	unsigned short port_map;
+	struct clk *clk;
 
-	struct xrx200_hw *hw;
+	struct xrx200_chan chan[XRX200_MAX_DMA];
+
+	struct net_device *net_dev;
+
+	__iomem void *pmac_reg;
 };
 
-static __iomem void *xrx200_pmac_membase;
+static u32 xrx200_pmac_r32(struct xrx200_priv *priv, u32 offset)
+{
+	return __raw_readl(priv->pmac_reg + offset);
+}
 
-#define ltq_pmac_r32(x)		ltq_r32(xrx200_pmac_membase + (x))
-#define ltq_pmac_w32(x, y)	ltq_w32(x, xrx200_pmac_membase + (y))
-#define ltq_pmac_w32_mask(x, y, z) \
-			ltq_w32_mask(x, y, xrx200_pmac_membase + (z))
+static void xrx200_pmac_w32(struct xrx200_priv *priv, u32 val, u32 offset)
+{
+	return __raw_writel(val, priv->pmac_reg + offset);
+}
 
-#define XRX200_GLOBAL_REGATTR(reg) \
-	.id = reg, \
-	.type = SWITCH_TYPE_INT, \
-	.set = xrx200_set_global_attr, \
-	.get = xrx200_get_global_attr
+static void xrx200_switch_w32_mask(struct xrx200_priv *priv, u32 clear, u32 set, u32 offset)
+{
+	u32 val = xrx200_pmac_r32(priv, offset);
 
-#define XRX200_PORT_REGATTR(reg) \
-	.id = reg, \
-	.type = SWITCH_TYPE_INT, \
-	.set = xrx200_set_port_attr, \
-	.get = xrx200_get_port_attr
+	val &= ~(clear);
+	val |= set;
+	xrx200_pmac_w32(priv, val, offset);
+}
 
 static int xrx200_open(struct net_device *dev)
 {
@@ -237,16 +128,16 @@ static int xrx200_open(struct net_device *dev)
 	int i;
 
 	for (i = 0; i < XRX200_MAX_DMA; i++) {
-		if (!priv->hw->chan[i].dma.irq)
+		if (!priv->chan[i].dma.irq)
 			continue;
-		spin_lock_bh(&priv->hw->chan[i].lock);
-		if (!priv->hw->chan[i].refcount) {
+		spin_lock_bh(&priv->chan[i].lock);
+		if (!priv->chan[i].refcount) {
 			if (XRX200_DMA_IS_RX(i))
-				napi_enable(&priv->hw->chan[i].napi);
-			ltq_dma_open(&priv->hw->chan[i].dma);
+				napi_enable(&priv->chan[i].napi);
+			ltq_dma_open(&priv->chan[i].dma);
 		}
-		priv->hw->chan[i].refcount++;
-		spin_unlock_bh(&priv->hw->chan[i].lock);
+		priv->chan[i].refcount++;
+		spin_unlock_bh(&priv->chan[i].lock);
 	}
 	netif_wake_queue(dev);
 
@@ -261,16 +152,16 @@ static int xrx200_close(struct net_device *dev)
 	netif_stop_queue(dev);
 
 	for (i = 0; i < XRX200_MAX_DMA; i++) {
-		if (!priv->hw->chan[i].dma.irq)
+		if (!priv->chan[i].dma.irq)
 			continue;
 
-		priv->hw->chan[i].refcount--;
-		if (!priv->hw->chan[i].refcount) {
+		priv->chan[i].refcount--;
+		if (!priv->chan[i].refcount) {
 			if (XRX200_DMA_IS_RX(i))
-				napi_disable(&priv->hw->chan[i].napi);
-			spin_lock_bh(&priv->hw->chan[i].lock);
-			ltq_dma_close(&priv->hw->chan[XRX200_DMA_RX].dma);
-			spin_unlock_bh(&priv->hw->chan[i].lock);
+				napi_disable(&priv->chan[i].napi);
+			spin_lock_bh(&priv->chan[i].lock);
+			ltq_dma_close(&priv->chan[XRX200_DMA_RX].dma);
+			spin_unlock_bh(&priv->chan[i].lock);
 		}
 	}
 
@@ -406,7 +297,7 @@ static int xrx200_start_xmit(struct sk_buff *skb, struct net_device *dev)
 	int ret = NETDEV_TX_OK;
 	int len;
 
-	ch = &priv->hw->chan[XRX200_DMA_TX];
+	ch = &priv->chan[XRX200_DMA_TX];
 
 	desc = &ch->dma.desc_base[ch->dma.desc];
 
@@ -448,11 +339,11 @@ out:
 	return ret;
 }
 
-static irqreturn_t xrx200_dma_irq(int irq, void *priv)
+static irqreturn_t xrx200_dma_irq(int irq, void *ptr)
 {
-	struct xrx200_hw *hw = priv;
+	struct xrx200_priv *priv = ptr;
 	int chnr = irq - XRX200_DMA_IRQ;
-	struct xrx200_chan *ch = &hw->chan[chnr];
+	struct xrx200_chan *ch = &priv->chan[chnr];
 
 	ltq_dma_disable_irq(&ch->dma);
 	ltq_dma_ack_irq(&ch->dma);
@@ -465,7 +356,7 @@ static irqreturn_t xrx200_dma_irq(int irq, void *priv)
 	return IRQ_HANDLED;
 }
 
-static int xrx200_dma_init(struct xrx200_hw *hw)
+static int xrx200_dma_init(struct xrx200_priv *priv)
 {
 	int i, err = 0;
 
@@ -473,7 +364,7 @@ static int xrx200_dma_init(struct xrx200_hw *hw)
 
 	for (i = 0; i < 8 && !err; i++) {
 		int irq = XRX200_DMA_IRQ + i;
-		struct xrx200_chan *ch = &hw->chan[i];
+		struct xrx200_chan *ch = &priv->chan[i];
 
 		spin_lock_init(&ch->lock);
 
@@ -481,10 +372,10 @@ static int xrx200_dma_init(struct xrx200_hw *hw)
 
 		if (i == XRX200_DMA_TX) {
 			ltq_dma_alloc_tx(&ch->dma);
-			err = request_irq(irq, xrx200_dma_irq, 0, "vrx200_tx", hw);
+			err = request_irq(irq, xrx200_dma_irq, 0, "vrx200_tx", priv);
 		} else if (i == XRX200_DMA_TX_2) {
 			ltq_dma_alloc_tx(&ch->dma);
-			err = request_irq(irq, xrx200_dma_irq, 0, "vrx200_tx_2", hw);
+			err = request_irq(irq, xrx200_dma_irq, 0, "vrx200_tx_2", priv);
 		} else if (i == XRX200_DMA_RX) {
 			ltq_dma_alloc_rx(&ch->dma);
 			for (ch->dma.desc = 0; ch->dma.desc < LTQ_DESC_NUM;
@@ -492,7 +383,7 @@ static int xrx200_dma_init(struct xrx200_hw *hw)
 				if (xrx200_alloc_skb(ch))
 					err = -ENOMEM;
 			ch->dma.desc = 0;
-			err = request_irq(irq, xrx200_dma_irq, 0, "vrx200_rx", hw);
+			err = request_irq(irq, xrx200_dma_irq, 0, "vrx200_rx", priv);
 		} else
 			continue;
 
@@ -505,38 +396,38 @@ static int xrx200_dma_init(struct xrx200_hw *hw)
 	return err;
 }
 
-static void xrx200_hw_init(struct xrx200_hw *hw)
+static void xrx200_hw_init(struct xrx200_priv *priv)
 {
 	/* enable clock gate */
-	clk_enable(hw->clk);
+	clk_enable(priv->clk);
 
 	/* set IPG to 12 */
-	ltq_pmac_w32_mask(PMAC_IPG_MASK, 0xb, PMAC_RX_IPG);
+	xrx200_switch_w32_mask(priv, PMAC_IPG_MASK, 0xb, PMAC_RX_IPG);
 
 	/* enable status header, enable CRC */
-	ltq_pmac_w32_mask(0,
+	xrx200_switch_w32_mask(priv, 0,
 		PMAC_HD_CTL_RST | PMAC_HD_CTL_AST | PMAC_HD_CTL_RXSH | PMAC_HD_CTL_AS | PMAC_HD_CTL_AC | PMAC_HD_CTL_RC,
 		PMAC_HD_CTL);
 }
 
-static void xrx200_hw_cleanup(struct xrx200_hw *hw)
+static void xrx200_hw_cleanup(struct xrx200_priv *priv)
 {
 	int i;
 
 	/* free the channels and IRQs */
 	for (i = 0; i < 2; i++) {
-		ltq_dma_free(&hw->chan[i].dma);
-		if (hw->chan[i].dma.irq)
-			free_irq(hw->chan[i].dma.irq, hw);
+		ltq_dma_free(&priv->chan[i].dma);
+		if (priv->chan[i].dma.irq)
+			free_irq(priv->chan[i].dma.irq, priv);
 	}
 
 	/* free the allocated RX ring */
 	for (i = 0; i < LTQ_DESC_NUM; i++)
-		dev_kfree_skb_any(hw->chan[XRX200_DMA_RX].skb[i]);
+		dev_kfree_skb_any(priv->chan[XRX200_DMA_RX].skb[i]);
 
 	/* release the clock */
-	clk_disable(hw->clk);
-	clk_put(hw->clk);
+	clk_disable(priv->clk);
+	clk_put(priv->clk);
 }
 
 
@@ -551,46 +442,30 @@ static const struct net_device_ops xrx200_netdev_ops = {
 	.ndo_tx_timeout		= xrx200_tx_timeout,
 };
 
-static void xrx200_of_iface(struct xrx200_hw *hw, struct device *dev)
-{
-	struct device_node *iface = dev->of_node;
-	struct xrx200_priv *priv;
-	const u8 *mac;
-
-	/* alloc the network device */
-	hw->devs = alloc_etherdev(sizeof(struct xrx200_priv));
-	if (!hw->devs)
-		return;
-
-	/* setup the network device */
-	strcpy(hw->devs->name, "eth%d");
-	hw->devs->netdev_ops = &xrx200_netdev_ops;
-	hw->devs->watchdog_timeo = XRX200_TX_TIMEOUT;
-	hw->devs->needed_headroom = XRX200_HEADROOM;
-	SET_NETDEV_DEV(hw->devs, dev);
-
-	/* setup our private data */
-	priv = netdev_priv(hw->devs);
-	priv->hw = hw;
-
-	mac = of_get_mac_address(iface);
-	if (mac)
-		ether_addr_copy(hw->devs->dev_addr, mac);
-	else
-		eth_hw_addr_random(hw->devs);
-
-	/* register the actual device */
-	register_netdev(hw->devs);
-}
-
-static struct xrx200_hw xrx200_hw;
-
 static int xrx200_probe(struct platform_device *pdev)
 {
+	struct device *dev = &pdev->dev;
+	struct device_node *np = dev->of_node;
 	struct resource *res;
 	struct device_node *phy_np;
 	struct of_phandle_iterator it;
+	struct xrx200_priv *priv;
+	struct net_device *net_dev;
+	const u8 *mac;
 	int err;
+
+	/* alloc the network device */
+	net_dev = devm_alloc_etherdev(dev, sizeof(struct xrx200_priv));
+	if (!net_dev)
+		return -ENOMEM;
+
+	priv = netdev_priv(net_dev);
+	priv->net_dev = net_dev;
+
+	net_dev->netdev_ops = &xrx200_netdev_ops;
+	net_dev->watchdog_timeo = XRX200_TX_TIMEOUT;
+	net_dev->needed_headroom = XRX200_HEADROOM;
+	SET_NETDEV_DEV(net_dev, dev);
 
 	/* load the memory ranges */
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
@@ -599,13 +474,13 @@ static int xrx200_probe(struct platform_device *pdev)
 		return -ENOENT;
 	}
 
-	xrx200_pmac_membase = devm_ioremap_resource(&pdev->dev, res);
-	if (!xrx200_pmac_membase) {
+	priv->pmac_reg = devm_ioremap_resource(&pdev->dev, res);
+	if (!priv->pmac_reg) {
 		dev_err(&pdev->dev, "failed to request and remap io ranges \n");
 		return -ENOMEM;
 	}
 
-	of_for_each_phandle(&it, err, pdev->dev.of_node, "lantiq,phys", NULL, 0) {
+	of_for_each_phandle(&it, err, np, "lantiq,phys", NULL, 0) {
 		phy_np = it.node;
 		if (phy_np) {
 			struct platform_device *phy = of_find_device_by_node(phy_np);
@@ -617,53 +492,47 @@ static int xrx200_probe(struct platform_device *pdev)
 	}
 
 	/* get the clock */
-	xrx200_hw.clk = clk_get(&pdev->dev, NULL);
-	if (IS_ERR(xrx200_hw.clk)) {
-		dev_err(&pdev->dev, "failed to get clock\n");
-		return PTR_ERR(xrx200_hw.clk);
+	priv->clk = devm_clk_get(&pdev->dev, NULL);
+	if (IS_ERR(priv->clk)) {
+		dev_err(dev, "failed to get clock\n");
+		return PTR_ERR(priv->clk);
 	}
 
+	mac = of_get_mac_address(np);
+	if (mac)
+		ether_addr_copy(net_dev->dev_addr, mac);
+	else
+		eth_hw_addr_random(net_dev);
+
 	/* bring up the dma engine and IP core */
-	xrx200_dma_init(&xrx200_hw);
-	xrx200_hw_init(&xrx200_hw);
-	tasklet_init(&xrx200_hw.chan[XRX200_DMA_TX].tasklet, xrx200_tx_housekeeping, (u32) &xrx200_hw.chan[XRX200_DMA_TX]);
-	tasklet_init(&xrx200_hw.chan[XRX200_DMA_TX_2].tasklet, xrx200_tx_housekeeping, (u32) &xrx200_hw.chan[XRX200_DMA_TX_2]);
-
-	xrx200_of_iface(&xrx200_hw, &pdev->dev);
-
-	xrx200_hw.chan[XRX200_DMA_RX].devs = xrx200_hw.devs;
-	xrx200_hw.chan[XRX200_DMA_TX].devs = xrx200_hw.devs;
-	xrx200_hw.chan[XRX200_DMA_TX_2].devs = xrx200_hw.devs;
+	xrx200_dma_init(priv);
+	xrx200_hw_init(priv);
+	tasklet_init(&priv->chan[XRX200_DMA_TX].tasklet, xrx200_tx_housekeeping, (u32) &priv->chan[XRX200_DMA_TX]);
+	tasklet_init(&priv->chan[XRX200_DMA_TX_2].tasklet, xrx200_tx_housekeeping, (u32) &priv->chan[XRX200_DMA_TX_2]);
 
 	/* setup NAPI */
-	netif_napi_add(xrx200_hw.chan[XRX200_DMA_RX].devs,
-			&xrx200_hw.chan[XRX200_DMA_RX].napi, xrx200_poll_rx, 32);
+	netif_napi_add(priv->chan[XRX200_DMA_RX].devs,
+			&priv->chan[XRX200_DMA_RX].napi, xrx200_poll_rx, 32);
 
-	platform_set_drvdata(pdev, &xrx200_hw);
+	platform_set_drvdata(pdev, priv);
 
-	return 0;
+	return register_netdev(net_dev);
 }
 
 static int xrx200_remove(struct platform_device *pdev)
 {
-	struct net_device *dev = platform_get_drvdata(pdev);
-	struct xrx200_priv *priv;
-
-	if (!dev)
-		return 0;
-
-	priv = netdev_priv(dev);
+	struct xrx200_priv *priv = platform_get_drvdata(pdev);
+	struct net_device *net_dev = priv->net_dev;
 
 	/* free stack related instances */
-	netif_stop_queue(dev);
-	netif_napi_del(&xrx200_hw.chan[XRX200_DMA_RX].napi);
+	netif_stop_queue(net_dev);
+	netif_napi_del(&priv->chan[XRX200_DMA_RX].napi);
 
 	/* shut down hardware */
-	xrx200_hw_cleanup(&xrx200_hw);
+	xrx200_hw_cleanup(priv);
 
 	/* remove the actual device */
-	unregister_netdev(dev);
-	free_netdev(dev);
+	unregister_netdev(net_dev);
 
 	return 0;
 }
@@ -680,7 +549,6 @@ static struct platform_driver xrx200_driver = {
 	.driver = {
 		.name = "lantiq,xrx200-net",
 		.of_match_table = xrx200_match,
-		.owner = THIS_MODULE,
 	},
 };
 
