@@ -337,8 +337,8 @@ static int gswip_setup(struct dsa_switch *ds)
 
 	/* disable port fetch/store dma */
 	for (i = 0; i < 7; i++ ) {
-		gswip_switch_w32(priv, 0, FDMA_PCTRLx(i));
-		gswip_switch_w32(priv, 0, SDMA_PCTRLx(i));
+		gswip_switch_w32_mask(priv, 1, 0, FDMA_PCTRLx(i));
+		gswip_switch_w32_mask(priv, 1, 0, SDMA_PCTRLx(i));
 	}
 
 	/* enable Switch */
