@@ -99,7 +99,8 @@ static struct sk_buff *gswip_tag_rcv(struct sk_buff *skb, struct net_device *dev
 	if (unlikely(!pskb_may_pull(skb, GSWIP_RX_HEADER_LEN)))
 		return NULL;
 
-	gswip_tag = ((u8 *)skb->data) - GSWIP_RX_HEADER_LEN;
+	gswip_tag = ((u8 *)skb->data) - ETH_HLEN;
+	skb_pull_rcsum(skb, GSWIP_RX_HEADER_LEN);
 
 	/* This protocol doesn't support cascading multiple
 	 * switches so it's safe to assume the switch is first
@@ -111,6 +112,8 @@ static struct sk_buff *gswip_tag_rcv(struct sk_buff *skb, struct net_device *dev
 
 	/* Get source port information */
 	port = (gswip_tag[7] & GSWIP_RX_SPPID_MASK) >> GSWIP_RX_SPPID_SHIFT;
+	if (port == 6)
+		return NULL;	
 	if (!ds->ports[port].netdev)
 		return NULL;
 
