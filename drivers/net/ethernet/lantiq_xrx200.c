@@ -77,7 +77,6 @@
 
 
 struct xrx200_chan {
-	int refcount;
 	int tx_free;
 
 	struct tasklet_struct tasklet;
@@ -97,6 +96,7 @@ struct xrx200_priv {
 	struct xrx200_chan chan[XRX200_MAX_DMA];
 
 	struct net_device *net_dev;
+	struct device *dev;
 
 	__iomem void *pmac_reg;
 };
@@ -129,12 +129,9 @@ static int xrx200_open(struct net_device *dev)
 		if (!priv->chan[i].dma.irq)
 			continue;
 		spin_lock_bh(&priv->chan[i].lock);
-		if (!priv->chan[i].refcount) {
-			if (XRX200_DMA_IS_RX(i))
-				napi_enable(&priv->chan[i].napi);
-			ltq_dma_open(&priv->chan[i].dma);
-		}
-		priv->chan[i].refcount++;
+		if (XRX200_DMA_IS_RX(i))
+			napi_enable(&priv->chan[i].napi);
+		ltq_dma_open(&priv->chan[i].dma);
 		spin_unlock_bh(&priv->chan[i].lock);
 	}
 	netif_wake_queue(dev);
@@ -153,14 +150,11 @@ static int xrx200_close(struct net_device *dev)
 		if (!priv->chan[i].dma.irq)
 			continue;
 
-		priv->chan[i].refcount--;
-		if (!priv->chan[i].refcount) {
-			if (XRX200_DMA_IS_RX(i))
-				napi_disable(&priv->chan[i].napi);
-			spin_lock_bh(&priv->chan[i].lock);
-			ltq_dma_close(&priv->chan[XRX200_DMA_RX].dma);
-			spin_unlock_bh(&priv->chan[i].lock);
-		}
+		if (XRX200_DMA_IS_RX(i))
+			napi_disable(&priv->chan[i].napi);
+		spin_lock_bh(&priv->chan[i].lock);
+		ltq_dma_close(&priv->chan[XRX200_DMA_RX].dma);
+		spin_unlock_bh(&priv->chan[i].lock);
 	}
 
 	return 0;
@@ -174,7 +168,7 @@ static int xrx200_alloc_skb(struct xrx200_chan *ch)
 		goto skip;
 
 	skb_reserve(ch->skb[ch->dma.desc], NET_SKB_PAD);
-	ch->dma.desc_base[ch->dma.desc].addr = dma_map_single(NULL,
+	ch->dma.desc_base[ch->dma.desc].addr = dma_map_single(ch->priv->dev,
 		ch->skb[ch->dma.desc]->data, XRX200_DMA_DATA_LEN,
 			DMA_FROM_DEVICE);
 	ch->dma.desc_base[ch->dma.desc].addr =
@@ -316,7 +310,7 @@ static int xrx200_start_xmit(struct sk_buff *skb, struct net_device *dev)
 
 	netif_trans_update(dev);
 
-	desc->addr = ((unsigned int) dma_map_single(NULL, skb->data, len,
+	desc->addr = ((unsigned int) dma_map_single(priv->dev, skb->data, len,
 						DMA_TO_DEVICE)) - byte_offset;
 	wmb();
 	desc->ctl = LTQ_DMA_OWN | LTQ_DMA_SOP | LTQ_DMA_EOP |
@@ -459,6 +453,7 @@ static int xrx200_probe(struct platform_device *pdev)
 
 	priv = netdev_priv(net_dev);
 	priv->net_dev = net_dev;
+	priv->dev = dev;
 
 	net_dev->netdev_ops = &xrx200_netdev_ops;
 	net_dev->watchdog_timeo = XRX200_TX_TIMEOUT;
