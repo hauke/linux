@@ -104,12 +104,21 @@
 #define MDIO_PHY_FDUP_EN	0x0200
 #define MDIO_PHY_FDUP_DIS	0x0600
 
+#define MDIO_PHY_FCONTX_EN	0x0100
+#define MDIO_PHY_FCONTX_DIS	0x0180
+
+#define MDIO_PHY_FCONRX_EN	0x0020
+#define MDIO_PHY_FCONRX_DIS	0x0060
+
 #define MDIO_PHY_LINK_MASK	0x6000
 #define MDIO_PHY_SPEED_MASK	0x1800
 #define MDIO_PHY_FDUP_MASK	0x0600
+#define MDIO_PHY_FCONTX_MASK	0x0180
+#define MDIO_PHY_FCONRX_MASK	0x0060
 #define MDIO_PHY_ADDR_MASK	0x001f
-#define MDIO_UPDATE_MASK	MDIO_PHY_ADDR_MASK | MDIO_PHY_LINK_MASK | \
-					MDIO_PHY_SPEED_MASK | MDIO_PHY_FDUP_MASK
+#define MDIO_UPDATE_MASK	MDIO_PHY_ADDR_MASK | MDIO_PHY_FCONRX_MASK | \
+				MDIO_PHY_FCONTX_MASK | MDIO_PHY_LINK_MASK | \
+				MDIO_PHY_SPEED_MASK | MDIO_PHY_FDUP_MASK
 
 /* MII */
 #define MII_CFG(p)		(p * 8)
@@ -407,6 +416,8 @@ static void gswip_adjust_link(struct dsa_switch *ds, int port, struct phy_device
 	u16 phyaddr = phydev->mdio.addr & MDIO_PHY_ADDR_MASK;
 	u16 miirate = 0;
 	u16 miimode;
+	u16 lcl_adv = 0, rmt_adv = 0;
+	u8 flowctrl;
 
 	/* do not run this for the CPU port 6 */
 	if (port > 5)
@@ -449,6 +460,27 @@ static void gswip_adjust_link(struct dsa_switch *ds, int port, struct phy_device
 	else
 		phyaddr |= MDIO_PHY_FDUP_DIS;
 
+	if (phydev->pause)
+		rmt_adv = LPA_PAUSE_CAP;
+	if (phydev->asym_pause)
+		rmt_adv |= LPA_PAUSE_ASYM;
+
+	if (phydev->advertising & ADVERTISED_Pause)
+		lcl_adv |= ADVERTISE_PAUSE_CAP;
+	if (phydev->advertising & ADVERTISED_Asym_Pause)
+		lcl_adv |= ADVERTISE_PAUSE_ASYM;
+
+	flowctrl = mii_resolve_flowctrl_fdx(lcl_adv, rmt_adv);
+
+	if (flowctrl & FLOW_CTRL_TX)
+		phyaddr |= MDIO_PHY_FCONTX_EN;
+	else
+		phyaddr |= MDIO_PHY_FCONTX_DIS;
+	if (flowctrl & FLOW_CTRL_RX)
+		phyaddr |= MDIO_PHY_FCONRX_EN;
+	else
+		phyaddr |= MDIO_PHY_FCONRX_DIS;
+
 	gswip_mdio_w32_mask(priv, MDIO_UPDATE_MASK, phyaddr, MDIO_PHY(port));
 	gswip_mii_w32_mask(priv, MII_CFG_RATE_MASK, miirate, MII_CFG(port));
 }
@@ -474,6 +506,9 @@ static int gswip_port_enable(struct dsa_switch *ds, int port, struct phy_device 
 static void gswip_port_disable(struct dsa_switch *ds, int port, struct phy_device *phy)
 {
 	struct gswip_priv *priv = (struct gswip_priv *)ds->priv;
+
+	gswip_switch_w32_mask(priv, 1, 0, FDMA_PCTRLx(port));
+	gswip_switch_w32_mask(priv, 1, 0, SDMA_PCTRLx(port));
 }
 
 static enum dsa_tag_protocol gswip_get_tag_protocol(struct dsa_switch *ds)
