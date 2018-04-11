@@ -70,9 +70,18 @@
 
 /* fetch / store dma */
 #define FDMA_PCTRL0		0x2A00
-#define FDMA_PCTRLx(x)		(FDMA_PCTRL0 + (x * 0x18))
+#define FDMA_PCTRLx(x)		(FDMA_PCTRL0 + ((x) * 0x18))
 #define SDMA_PCTRL0		0x2F00
-#define SDMA_PCTRLx(x)		(SDMA_PCTRL0 + (x * 0x18))
+#define SDMA_PCTRLx(x)		(SDMA_PCTRL0 + ((x) * 0x18))
+
+#define PCE_PCTRL00		0x1200
+#define PCE_PCTRL0x(x)		(PCE_PCTRL00 + ((x) * 0x28))
+#define  PCE_PCTRL0_PSTATE_LISTEN	0x0
+#define  PCE_PCTRL0_PSTATE_RX		0x1
+#define  PCE_PCTRL0_PSTATE_TX		0x2
+#define  PCE_PCTRL0_PSTATE_LEARNING 	0x3
+#define  PCE_PCTRL0_PSTATE_FORWARDING 	0x7
+#define  PCE_PCTRL0_PSTATE_MASK 	0x7
 
 /* buffer management */
 #define BM_PCFG0		0x200
@@ -155,21 +164,28 @@
 #define PMAC_HD_CTL_RST		0x0100
 
 /* PCE */
-#define PCE_TBL_KEY(x)		(0x1100 + ((7 - x) * 4))
+#define PCE_TBL_KEY(x)		(0x111C - ((x) * 4))
 #define PCE_TBL_MASK		0x1120
-#define PCE_TBL_VAL(x)		(0x1124 + ((4 - x) * 4))
+#define PCE_TBL_VAL(x)		(0x1134 - ((x) * 4))
 #define PCE_TBL_ADDR		0x1138
 #define PCE_TBL_CTRL		0x113c
+#define  PCE_TBL_CTRL_BAS		BIT(15)
+#define  PCE_TBL_CTRL_TYPE		BIT(13)
+#define  PCE_TBL_CTRL_VLD		BIT(12)
+#define  PCE_TBL_CTRL_KEYFORM		BIT(11)
+#define  PCE_TBL_CTRL_GMAP_MASK		GENMASK(10, 7)
+#define  PCE_TBL_CTRL_OPMOD_MASK	GENMASK(6, 5)
+#define  PCE_TBL_CTRL_OPMOD_ADRD	0x00
+#define  PCE_TBL_CTRL_OPMOD_ADWR	0x20
+#define  PCE_TBL_CTRL_OPMOD_KSRD	0x40
+#define  PCE_TBL_CTRL_OPMOD_KSWR	0x60
+#define  PCE_TBL_CTRL_ADDR_MASK		GENMASK(4, 0)
 #define PCE_PMAP1		0x114c
 #define PCE_PMAP2		0x1150
 #define PCE_PMAP3		0x1154
 #define PCE_GCTRL_REG(x)	(0x1158 + (x * 4))
 #define PCE_PCTRL_REG(p, x)	(0x1200 + (((p * 0xa) + x) * 4))
 
-#define PCE_TBL_BUSY		BIT(15)
-#define PCE_TBL_CFG_ADDR_MASK	0x1f
-#define PCE_TBL_CFG_ADWR	0x20
-#define PCE_TBL_CFG_ADWR_MASK	0x60
 #define PCE_INGRESS		BIT(11)
 
 /* MAC */
@@ -335,12 +351,96 @@ static int gswip_mdio(struct gswip_priv *priv, struct device_node *mdio_np)
 	return 0;
 }
 
+struct xrx200_pce_table_entry {
+	u16 index;	// PCE_TBL_ADDR.ADDR = pData->table_index
+	u16 table; 	// PCE_TBL_CTRL.ADDR = pData->table
+	u16 key[8];
+	u16 val[5];
+	u16 mask;
+	u8 gmap;
+	bool type;
+	bool valid;
+};
+
+static void gswip_wait_pce_tbl_ready(struct gswip_priv *priv)
+{
+	while (gswip_switch_r32(priv, PCE_TBL_CTRL) & PCE_TBL_CTRL_BAS)
+		cond_resched();
+}
+
+static void xrx200_pce_table_entry_read(struct gswip_priv *priv,
+				        struct xrx200_pce_table_entry *tbl)
+{
+	int i;
+	u16 crtl;
+
+	gswip_wait_pce_tbl_ready(priv);
+
+	gswip_switch_w32(priv, tbl->index, PCE_TBL_ADDR);
+	gswip_switch_w32_mask(priv, PCE_TBL_CTRL_ADDR_MASK | PCE_TBL_CTRL_OPMOD_MASK,
+			      tbl->table | PCE_TBL_CTRL_OPMOD_ADRD | PCE_TBL_CTRL_BAS,
+			      PCE_TBL_CTRL);
+
+	gswip_wait_pce_tbl_ready(priv);
+
+	for (i = 0; i < ARRAY_SIZE(tbl->key); i++)
+		tbl->key[i] = gswip_switch_r32(priv, PCE_TBL_KEY(i));
+
+	for (i = 0; i < ARRAY_SIZE(tbl->val); i++)
+		tbl->val[i] = gswip_switch_r32(priv, PCE_TBL_VAL(i));
+
+	tbl->mask = gswip_switch_r32(priv, PCE_TBL_MASK);
+	
+	crtl = gswip_switch_r32(priv, PCE_TBL_CTRL);
+
+	tbl->type = !!(crtl & PCE_TBL_CTRL_TYPE);
+	tbl->valid = !!(crtl & PCE_TBL_CTRL_VLD);
+	tbl->gmap = crtl & PCE_TBL_CTRL_GMAP_MASK >> 7;
+}
+
+static void xrx200_pce_table_entry_write(struct gswip_priv *priv, struct xrx200_pce_table_entry *tbl)
+{
+	int i;
+	u16 crtl;
+
+	gswip_wait_pce_tbl_ready(priv);
+
+	gswip_switch_w32(priv, tbl->index, PCE_TBL_ADDR);
+	gswip_switch_w32_mask(priv, PCE_TBL_CTRL_ADDR_MASK | PCE_TBL_CTRL_OPMOD_MASK,
+			      tbl->table | PCE_TBL_CTRL_OPMOD_ADWR,
+			      PCE_TBL_CTRL);
+
+	for (i = 0; i < ARRAY_SIZE(tbl->key); i++)
+		gswip_switch_w32(priv, tbl->key[i], PCE_TBL_KEY(i));
+
+	for (i = 0; i < ARRAY_SIZE(tbl->val); i++)
+		gswip_switch_w32(priv, tbl->val[i], PCE_TBL_VAL(i));
+
+	gswip_switch_w32_mask(priv, PCE_TBL_CTRL_ADDR_MASK | PCE_TBL_CTRL_OPMOD_MASK,
+			      tbl->table | PCE_TBL_CTRL_OPMOD_ADWR,
+			      PCE_TBL_CTRL);
+
+	gswip_switch_w32(priv, tbl->mask, PCE_TBL_MASK);
+
+	crtl = gswip_switch_r32(priv, PCE_TBL_CTRL);
+	crtl &= ~(PCE_TBL_CTRL_TYPE | PCE_TBL_CTRL_VLD | PCE_TBL_CTRL_GMAP_MASK);
+	if (tbl->type)
+		crtl |= PCE_TBL_CTRL_TYPE;
+	if (tbl->valid)
+		crtl |= PCE_TBL_CTRL_VLD;
+	crtl |= (tbl->gmap << 7) & PCE_TBL_CTRL_GMAP_MASK;
+	crtl |= PCE_TBL_CTRL_BAS;
+	gswip_switch_w32(priv, crtl, PCE_TBL_CTRL);
+
+	gswip_wait_pce_tbl_ready(priv);
+}
+
 static void xrx200_pci_microcode(struct gswip_priv *priv)
 {
 	int i;
 
-	gswip_switch_w32_mask(priv, PCE_TBL_CFG_ADDR_MASK | PCE_TBL_CFG_ADWR_MASK,
-		PCE_TBL_CFG_ADWR, PCE_TBL_CTRL);
+	gswip_switch_w32_mask(priv, PCE_TBL_CTRL_ADDR_MASK | PCE_TBL_CTRL_OPMOD_MASK,
+			      PCE_TBL_CTRL_OPMOD_ADWR, PCE_TBL_CTRL);
 	gswip_switch_w32(priv, 0, PCE_TBL_MASK);
 
 	for (i = 0; i < ARRAY_SIZE(pce_microcode); i++) {
@@ -351,8 +451,8 @@ static void xrx200_pci_microcode(struct gswip_priv *priv)
 		gswip_switch_w32(priv, pce_microcode[i].val[0], PCE_TBL_VAL(3));
 
 		// start the table access:
-		gswip_switch_w32_mask(priv, 0, PCE_TBL_BUSY, PCE_TBL_CTRL);
-		while (gswip_switch_r32(priv, PCE_TBL_CTRL) & PCE_TBL_BUSY);
+		gswip_switch_w32_mask(priv, 0, PCE_TBL_CTRL_BAS, PCE_TBL_CTRL);
+		gswip_wait_pce_tbl_ready(priv);
 	}
 
 	/* tell the switch that the microcode is loaded */
