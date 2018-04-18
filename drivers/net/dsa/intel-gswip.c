@@ -23,6 +23,7 @@
 #include <linux/interrupt.h>
 #include <linux/clk.h>
 #include <linux/if_vlan.h>
+#include <linux/if_bridge.h>
 #include <linux/delay.h>
 #include <net/dsa.h>
 
@@ -216,12 +217,24 @@
 #define GSWIP_BM_QUEUE_GCTRL		0x0128
 #define  GSWIP_BM_QUEUE_GCTRL_GL_MOD	BIT(10)
 
+struct gswip_vlan {
+	struct net_device *bridge;
+	u16 id;
+	u8 fid;
+	bool reserved;
+	bool free;
+	u16 port_map;
+	u16 tag_map;
+};
+
 struct gswip_priv {
 	__iomem void *gswip;
 	__iomem void *mdio;
 	__iomem void *mii;
+	int cpu_port;
 	struct dsa_switch *ds;
-	struct device *dev;	
+	struct device *dev;
+	struct gswip_vlan vlan[64];
 };
 
 static u32 gswip_switch_r32(struct gswip_priv *priv, u32 offset)
@@ -461,7 +474,7 @@ static void xrx200_pci_microcode(struct gswip_priv *priv)
 
 static int gswip_setup(struct dsa_switch *ds)
 {
-	struct gswip_priv *priv = (struct gswip_priv *)ds->priv;
+	struct gswip_priv *priv = ds->priv;
 	int i;
 
 	gswip_switch_w32(priv, 1, 0);
@@ -623,12 +636,160 @@ static enum dsa_tag_protocol gswip_get_tag_protocol(struct dsa_switch *ds)
 	return DSA_TAG_PROTO_GSWIP;
 }
 
+static void gswip_stp_state_set(struct dsa_switch *ds, int port, u8 state)
+{
+	struct gswip_priv *priv = ds->priv;
+	u32 stp_state;
+
+	switch (state) {
+	case BR_STATE_DISABLED:
+		gswip_switch_w32_mask(priv, 1, 0, SDMA_PCTRLx(port));
+		return;
+	case BR_STATE_BLOCKING:
+	case BR_STATE_LISTENING:
+		stp_state = PCE_PCTRL0_PSTATE_LISTEN;
+		break;
+	case BR_STATE_LEARNING:
+		stp_state = PCE_PCTRL0_PSTATE_LEARNING;
+		break;
+	case BR_STATE_FORWARDING:
+	default:
+		stp_state = PCE_PCTRL0_PSTATE_FORWARDING;
+		break;
+	}
+
+	gswip_switch_w32_mask(priv, 0, 1, SDMA_PCTRLx(port));
+	gswip_switch_w32_mask(priv, PCE_PCTRL0_PSTATE_MASK, stp_state, PCE_PCTRL0x(port));
+}
+
+/*
+ * The switch has a table with the active VLANs (XRX200_PCE_ACTVLAN_IDX)
+ * with 64 possible entries and an other table (XRX200_PCE_VLANMAP_IDX)
+ * where ports can be added to such an VLAN.
+ * The driver first searches if there is already an entry for this bridge
+ * and if not it searches for a free index and a unused VLAN and add a new
+ * VLAN entry.  At the end this port will be added to the VLAN map. */
+static int
+gswip_port_bridge_join(struct dsa_switch *ds, int port,
+			struct net_device *bridge)
+{
+	struct gswip_priv *priv = ds->priv;
+	struct gswip_vlan *vlan_entry;
+	struct xrx200_pce_table_entry tbl = {0,};
+	int vlan;
+	int vlan_idx = -1;
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(priv->vlan); i++) {
+		if (priv->vlan[i].bridge == bridge) {
+			vlan_entry = &priv->vlan[i];
+			break;
+		}
+	}
+	
+	/* Find a VLAN ID in the switch from 1000 to 1064 which is not 
+	 * used by trying all the 64 VLAN IDs and then checking all the 
+	 * 64 possible positions. The range was choose randomly. */
+	if (!vlan_entry) {
+		for (vlan = 1000; vlan < 1064; vlan++) {
+			for (i = 0; i < ARRAY_SIZE(priv->vlan); i++) {
+				if (priv->vlan[i].id == vlan && !priv->vlan[i].free)
+					break;
+				if (priv->vlan[i].free) {
+					vlan_entry = &priv->vlan[i];
+					vlan_idx = i;
+				}
+			}
+			if (!vlan_entry)
+				return -EIO;
+
+			if (i == ARRAY_SIZE(priv->vlan)) {
+				vlan_entry->id = vlan;
+				vlan_entry->bridge = bridge;
+				vlan_entry->free = false;
+				vlan_entry->fid = vlan_idx + 1;
+
+				tbl.index = vlan_idx;
+				tbl.table = XRX200_PCE_ACTVLAN_IDX;
+				tbl.key[0] = vlan_entry->id;
+				tbl.val[0] = vlan_entry->fid;
+				tbl.valid = true;
+				xrx200_pce_table_entry_write(priv, &tbl);
+				memset(&tbl, 0x0, sizeof(tbl));
+				
+				vlan_entry->port_map |= BIT(priv->cpu_port);
+				vlan_entry->tag_map |= BIT(priv->cpu_port);
+				break;
+			}
+		}
+	}
+	
+	if (!vlan_entry)
+		return -EIO;
+
+	vlan_entry->port_map |= BIT(port);
+
+	tbl.index = vlan_idx;
+	tbl.table = XRX200_PCE_VLANMAP_IDX;
+	tbl.key[0] = vlan_entry->id;
+	tbl.val[0] = vlan_entry->port_map;
+	tbl.val[1] = vlan_entry->tag_map;
+	tbl.valid = true;
+	xrx200_pce_table_entry_write(priv, &tbl);
+	return 0;
+}
+
+static void
+gswip_port_bridge_leave(struct dsa_switch *ds, int port,
+			 struct net_device *bridge)
+{
+	struct gswip_priv *priv = ds->priv;
+	struct gswip_vlan *vlan_entry;
+	struct xrx200_pce_table_entry tbl = {0,};
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(priv->vlan); i++) {
+		if (priv->vlan[i].bridge == bridge) {
+			vlan_entry = &priv->vlan[i];
+			break;
+		}
+	}
+	if (i == ARRAY_SIZE(priv->vlan)) {
+		dev_err(priv->dev, "can not remove unknown brigde for port %i\n",
+			port);
+		return;
+	}
+
+	vlan_entry->port_map &= ~BIT(port);
+
+	tbl.index = i;
+	tbl.table = XRX200_PCE_VLANMAP_IDX;
+	tbl.key[0] = vlan_entry->id;
+	tbl.val[0] = vlan_entry->port_map;
+	tbl.val[1] = vlan_entry->tag_map;
+	if (vlan_entry->port_map)
+		tbl.valid = true;
+	xrx200_pce_table_entry_write(priv, &tbl);
+
+	if (!vlan_entry->port_map) {
+		memset(&tbl, 0x0, sizeof(tbl));
+		tbl.index = i;
+		tbl.table = XRX200_PCE_ACTVLAN_IDX;
+		tbl.key[0] = vlan_entry->id;
+		tbl.valid = false;
+		xrx200_pce_table_entry_write(priv, &tbl);
+	}
+}
+
 static const struct dsa_switch_ops gswip_switch_ops = {
 	.get_tag_protocol	= gswip_get_tag_protocol,
 	.setup			= gswip_setup,
 	.adjust_link		= gswip_adjust_link,
 	.port_enable		= gswip_port_enable,
 	.port_disable		= gswip_port_disable,
+	.port_stp_state_set	= gswip_stp_state_set,
+	.port_bridge_join	= gswip_port_bridge_join,
+	.port_bridge_leave	= gswip_port_bridge_leave,
 };
 
 static int gswip_probe(struct platform_device *pdev)
@@ -664,6 +825,7 @@ static int gswip_probe(struct platform_device *pdev)
 	priv->ds->priv = priv;
 	priv->ds->ops = &gswip_switch_ops;
 	priv->dev = &pdev->dev;
+	priv->cpu_port = 6;
 
 	/* bring up the mdio bus */
 	mdio_np = of_find_compatible_node(pdev->dev.of_node, NULL,
