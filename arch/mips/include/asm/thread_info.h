@@ -49,11 +49,11 @@ struct thread_info {
 	.addr_limit	= KERNEL_DS,		\
 }
 
-/* How to get the thread information struct from C.  */
-register struct thread_info *__current_thread_info __asm__("$28");
-
 static inline struct thread_info *current_thread_info(void)
 {
+	/* How to get the thread information struct from C.  */
+	register struct thread_info *__current_thread_info __asm__("$28");
+
 	return __current_thread_info;
 }
 
