@@ -76,9 +76,9 @@ void error(char *x)
 #include "../../../../lib/decompress_unxz.c"
 #endif
 
-const unsigned long __stack_chk_guard = 0x000a0dff;
+const unsigned long __visible __stack_chk_guard = 0x000a0dff;
 
-void __stack_chk_fail(void)
+void __visible __stack_chk_fail(void)
 {
 	error("stack-protector: Kernel stack is corrupted\n");
 }
