@@ -3,7 +3,7 @@
 
 #include "libgcc.h"
 
-long long notrace __lshrdi3(long long u, word_type b)
+__visible long long notrace __lshrdi3(long long u, word_type b)
 {
 	DWunion uu, w;
 	word_type bm;
