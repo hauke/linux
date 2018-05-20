@@ -60,7 +60,7 @@
  * instruction, so the lower 16 bits must be zero.  Should be true on
  * on any sane architecture; generic code does not use this assumption.
  */
-extern const unsigned long mips_io_port_base;
+extern unsigned long mips_io_port_base;
 
 /*
  * Gcc will generate code to load the value of mips_io_port_base after each
