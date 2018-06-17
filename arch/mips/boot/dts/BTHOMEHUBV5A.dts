@@ -198,10 +198,12 @@
 
 &gphy0 {
 	lantiq,gphy-mode = <GPHY_MODE_GE>;
+	compatible = "lantiq,xrx200a2x-gphy";
 };
 
 &gphy1 {
 	lantiq,gphy-mode = <GPHY_MODE_GE>;
+	compatible = "lantiq,xrx200a2x-gphy";
 };
 
 &gpio {
