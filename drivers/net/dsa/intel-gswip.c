@@ -949,34 +949,35 @@ static int gswip_probe(struct platform_device *pdev)
 	struct gswip_priv *priv;
 	struct resource *gswip_res, *mdio_res, *mii_res;
 	struct device_node *mdio_np;
+	struct device *dev = &pdev->dev;
 	int err;
 
-	priv = devm_kzalloc(&pdev->dev, sizeof(*priv), GFP_KERNEL);
+	priv = devm_kzalloc(dev, sizeof(*priv), GFP_KERNEL);
 	if (!priv)
 		return -ENOMEM;
 
 	gswip_res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-	priv->gswip = devm_ioremap_resource(&pdev->dev, gswip_res);
+	priv->gswip = devm_ioremap_resource(dev, gswip_res);
 	if (!priv->gswip)
 		return -ENOMEM;
 
 	mdio_res = platform_get_resource(pdev, IORESOURCE_MEM, 1);
-	priv->mdio = devm_ioremap_resource(&pdev->dev, mdio_res);
+	priv->mdio = devm_ioremap_resource(dev, mdio_res);
 	if (!priv->mdio)
 		return -ENOMEM;
 
 	mii_res = platform_get_resource(pdev, IORESOURCE_MEM, 2);
-	priv->mii = devm_ioremap_resource(&pdev->dev, mii_res);
+	priv->mii = devm_ioremap_resource(dev, mii_res);
 	if (!priv->mii)
 		return -ENOMEM;
 
-	priv->ds = dsa_switch_alloc(&pdev->dev, DSA_MAX_PORTS);
+	priv->ds = dsa_switch_alloc(dev, DSA_MAX_PORTS);
 	if (!priv->ds)
 		return -ENOMEM;
 
 	priv->ds->priv = priv;
 	priv->ds->ops = &gswip_switch_ops;
-	priv->dev = &pdev->dev;
+	priv->dev = dev;
 	priv->cpu_port = 6;
 
 	/* bring up the mdio bus */
@@ -984,13 +985,15 @@ static int gswip_probe(struct platform_device *pdev)
 				"lantiq,xrx200-mdio");
 	if (mdio_np)
 		if (gswip_mdio(priv, mdio_np))
-			dev_err(&pdev->dev, "mdio probe failed\n");
+			dev_err(dev, "mdio probe failed\n");
 
 	platform_set_drvdata(pdev, priv);
 
 	err = dsa_register_switch(priv->ds);
-	if (err && mdio_np)
+	if (err && mdio_np) {
+		dev_err(dev, "dsa switch register failed: %i\n", err);
 		mdiobus_unregister(priv->ds->slave_mii_bus);
+	}
 
 	return err;
 }
