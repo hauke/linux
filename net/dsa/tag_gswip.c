@@ -102,14 +102,6 @@ static struct sk_buff *gswip_tag_rcv(struct sk_buff *skb, struct net_device *dev
 
 	/* Get source port information */
 	port = (gswip_tag[7] & GSWIP_RX_SPPID_MASK) >> GSWIP_RX_SPPID_SHIFT;
-	/* This is a workaround for a problem in the driver. We receive
-	 * some packets without a special tag at the beginning sometimes
-	 * still send when the system was in the u-boot and they should
-	 * just be dropped */
-	if (port == 6) {
-		printk("drop:\n");
-		return NULL;
-	}
 	skb->dev = dsa_master_find_slave(dev, 0, port);
 	if (!skb->dev)
 		return NULL;
