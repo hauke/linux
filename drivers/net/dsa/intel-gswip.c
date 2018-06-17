@@ -781,72 +781,6 @@ gswip_port_bridge_leave(struct dsa_switch *ds, int port,
 	}
 }
 
-
-static int
-mt7530_port_fdb_add(struct dsa_switch *ds, int port,
-		    const unsigned char *addr, u16 vid)
-{
-	struct gswip_priv *priv = ds->priv;
-	struct xrx200_pce_table_entry tbl = {0,};
-	int ret;
-	u8 port_mask = BIT(port);
-
-
-
-	return ret;
-}
-
-static int
-mt7530_port_fdb_del(struct dsa_switch *ds, int port,
-		    const unsigned char *addr, u16 vid)
-{
-	struct gswip_priv *priv = ds->priv;
-	int ret;
-	u8 port_mask = BIT(port);
-
-	mutex_lock(&priv->reg_mutex);
-	mt7530_fdb_write(priv, vid, port_mask, addr, -1, STATIC_EMP);
-	ret = mt7530_fdb_cmd(priv, MT7530_FDB_WRITE, NULL);
-	mutex_unlock(&priv->reg_mutex);
-
-	return ret;
-}
-
-static int
-mt7530_port_fdb_dump(struct dsa_switch *ds, int port,
-		     dsa_fdb_dump_cb_t *cb, void *data)
-{
-	struct mt7530_priv *priv = ds->priv;
-	struct mt7530_fdb _fdb = { 0 };
-	int cnt = MT7530_NUM_FDB_RECORDS;
-	int ret = 0;
-	u32 rsp = 0;
-
-	mutex_lock(&priv->reg_mutex);
-
-	ret = mt7530_fdb_cmd(priv, MT7530_FDB_START, &rsp);
-	if (ret < 0)
-		goto err;
-
-	do {
-		if (rsp & ATC_SRCH_HIT) {
-			mt7530_fdb_read(priv, &_fdb);
-			if (_fdb.port_mask & BIT(port)) {
-				ret = cb(_fdb.mac, _fdb.vid, _fdb.noarp,
-					 data);
-				if (ret < 0)
-					break;
-			}
-		}
-	} while (--cnt &&
-		 !(rsp & ATC_SRCH_END) &&
-		 !mt7530_fdb_cmd(priv, MT7530_FDB_NEXT, &rsp));
-err:
-	mutex_unlock(&priv->reg_mutex);
-
-	return 0;
-}
-
 static const struct dsa_switch_ops gswip_switch_ops = {
 	.get_tag_protocol	= gswip_get_tag_protocol,
 	.setup			= gswip_setup,
@@ -856,9 +790,6 @@ static const struct dsa_switch_ops gswip_switch_ops = {
 	.port_stp_state_set	= gswip_stp_state_set,
 	.port_bridge_join	= gswip_port_bridge_join,
 	.port_bridge_leave	= gswip_port_bridge_leave,
-	.port_fdb_add		= gswip_port_fdb_add,
-	.port_fdb_del		= gswip_port_fdb_del,
-	.port_fdb_dump		= gswip_port_fdb_dump,
 };
 
 static int gswip_probe(struct platform_device *pdev)
