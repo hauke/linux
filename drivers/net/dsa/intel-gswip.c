@@ -295,37 +295,37 @@ static const struct gswip_rmon_cnt_desc gswip_rmon_cnt[] = {
 	/** Receive Bad Byte Count (64 bit). */
 	MIB_DESC(2, 0x26, "RxBadBytes"),
 	/** Transmit Dropped Packet Count, based on Congestion Management. */
-	MIB_DESC(1, 0x11, "nTxAcmDroppedPkts"),
+	MIB_DESC(1, 0x11, "TxAcmDroppedPkts"),
 	/** Transmit Packet Count. */
-	MIB_DESC(1, 0x0C, "nTxGoodPkts"),
+	MIB_DESC(1, 0x0C, "TxGoodPkts"),
 	/** Transmit Unicast Packet Count. */
-	MIB_DESC(1, 0x06, "nTxUnicastPkts"),
+	MIB_DESC(1, 0x06, "TxUnicastPkts"),
 	/** Transmit Multicast Packet Count. */
-	MIB_DESC(1, 0x07, "nTxMulticastPkts"),
+	MIB_DESC(1, 0x07, "TxMulticastPkts"),
 	/** Transmit Size 64 Packet Count. */
-	MIB_DESC(1, 0x00, "nTx64BytePkts"),
+	MIB_DESC(1, 0x00, "Tx64BytePkts"),
 	/** Transmit Size 65-127 Packet Count. */
-	MIB_DESC(1, 0x01, "nTx127BytePkts"),
+	MIB_DESC(1, 0x01, "Tx127BytePkts"),
 	/** Transmit Size 128-255 Packet Count. */
-	MIB_DESC(1, 0x02, "nTx255BytePkts"),
+	MIB_DESC(1, 0x02, "Tx255BytePkts"),
 	/** Transmit Size 256-511 Packet Count. */
-	MIB_DESC(1, 0x03, "nTx511BytePkts"),
+	MIB_DESC(1, 0x03, "Tx511BytePkts"),
 	/** Transmit Size 512-1023 Packet Count. */
-	MIB_DESC(1, 0x04, "nTx1023BytePkts"),
+	MIB_DESC(1, 0x04, "Tx1023BytePkts"),
 	/** Transmit Size 1024-1522 (or more, if configured) Packet Count. */
-	MIB_DESC(1, 0x05, "nTxMaxBytePkts"),
+	MIB_DESC(1, 0x05, "TxMaxBytePkts"),
 	/** Transmit Single Collision Count. */
-	MIB_DESC(1, 0x08, "nTxSingleCollCount"),
+	MIB_DESC(1, 0x08, "TxSingleCollCount"),
 	/** Transmit Multiple Collision Count. */
-	MIB_DESC(1, 0x09, "nTxMultCollCount"),
+	MIB_DESC(1, 0x09, "TxMultCollCount"),
 	/** Transmit Late Collision Count. */
-	MIB_DESC(1, 0x0A, "nTxLateCollCount"),
+	MIB_DESC(1, 0x0A, "TxLateCollCount"),
 	/** Transmit Excessive Collision Count. */
-	MIB_DESC(1, 0x0B, "nTxExcessCollCount"),
+	MIB_DESC(1, 0x0B, "TxExcessCollCount"),
 	/** Transmit Pause Packet Count. */
-	MIB_DESC(1, 0x0D, "nTxPauseCount"),
+	MIB_DESC(1, 0x0D, "TxPauseCount"),
 	/** Transmit Drop Packet Count. */
-	MIB_DESC(1, 0x10, "nTxDroppedPkts"),
+	MIB_DESC(1, 0x10, "TxDroppedPkts"),
 	/** Transmit Good Byte Count (64 bit). */
 	MIB_DESC(2, 0x0E, "TxGoodBytes"),
 };
