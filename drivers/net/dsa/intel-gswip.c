@@ -164,6 +164,14 @@
 #define PMAC_HD_CTL_AST		0x0080
 #define PMAC_HD_CTL_RST		0x0100
 
+/* BM RAM */
+#define BM_RAM_VAL(x)		(0x10C - ((x) * 4))
+#define BM_RAM_ADDR		0x110
+#define BM_RAM_CTRL		0x114
+#define  BM_RAM_CTRL_BAS		BIT(15)
+#define  BM_RAM_CTRL_OPMOD		BIT(5)
+#define  BM_RAM_CTRL_ADDR_MASK		GENMASK(4, 0)
+
 /* PCE */
 #define PCE_TBL_KEY(x)		(0x111C - ((x) * 4))
 #define PCE_TBL_MASK		0x1120
@@ -235,6 +243,91 @@ struct gswip_priv {
 	struct dsa_switch *ds;
 	struct device *dev;
 	struct gswip_vlan vlan[64];
+};
+
+struct gswip_rmon_cnt_desc {
+	unsigned int size;
+	unsigned int offset;
+	const char* name;
+};
+
+#define MIB_DESC(_size, _offset, _name) {.size = _size, .offset = _offset, .name = _name}
+
+static const struct gswip_rmon_cnt_desc gswip_rmon_cnt[] = {
+	/** Receive Packet Count (only packets that are accepted and not discarded). */
+	MIB_DESC(1, 0x1F, "RxGoodPkts"),
+	/** Receive Unicast Packet Count. */
+	MIB_DESC(1, 0x23, "RxUnicastPkts"),
+	/** Receive Multicast Packet Count. */
+	MIB_DESC(1, 0x22, "RxMulticastPkts"),
+	/** Receive FCS Error Packet Count. */
+	MIB_DESC(1, 0x21, "RxFCSErrorPkts"),
+	/** Receive Undersize Good Packet Count. */
+	MIB_DESC(1, 0x1D, "RxUnderSizeGoodPkts"),
+	/** Receive Undersize Error Packet Count. */
+	MIB_DESC(1, 0x1E, "RxUnderSizeErrorPkts"),
+	/** Receive Oversize Good Packet Count. */
+	MIB_DESC(1, 0x1B, "RxOversizeGoodPkts"),
+	/** Receive Oversize Error Packet Count. */
+	MIB_DESC(1, 0x1C, "RxOversizeErrorPkts"),
+	/** Receive Good Pause Packet Count. */
+	MIB_DESC(1, 0x20, "RxGoodPausePkts"),
+	/** Receive Align Error Packet Count. */
+	MIB_DESC(1, 0x1A, "RxAlignErrorPkts"),
+	/** Receive Size 64 Packet Count. */
+	MIB_DESC(1, 0x12, "Rx64BytePkts"),
+	/** Receive Size 65-127 Packet Count. */
+	MIB_DESC(1, 0x13, "Rx127BytePkts"),
+	/** Receive Size 128-255 Packet Count. */
+	MIB_DESC(1, 0x14, "Rx255BytePkts"),
+	/** Receive Size 256-511 Packet Count. */
+	MIB_DESC(1, 0x15, "Rx511BytePkts"),
+	/** Receive Size 512-1023 Packet Count. */
+	MIB_DESC(1, 0x16, "Rx1023BytePkts"),
+	/** Receive Size 1024-1522 (or more, if configured) Packet Count. */
+	MIB_DESC(1, 0x17, "RxMaxBytePkts"),
+	/** Receive Dropped Packet Count. */
+	MIB_DESC(1, 0x18, "RxDroppedPkts"),
+	/** Filtered Packet Count. */
+	MIB_DESC(1, 0x19, "RxFilteredPkts"),
+	/** Receive Good Byte Count (64 bit). */
+	MIB_DESC(2, 0x24, "RxGoodBytes"),
+	/** Receive Bad Byte Count (64 bit). */
+	MIB_DESC(2, 0x26, "RxBadBytes"),
+	/** Transmit Dropped Packet Count, based on Congestion Management. */
+	MIB_DESC(1, 0x11, "nTxAcmDroppedPkts"),
+	/** Transmit Packet Count. */
+	MIB_DESC(1, 0x0C, "nTxGoodPkts"),
+	/** Transmit Unicast Packet Count. */
+	MIB_DESC(1, 0x06, "nTxUnicastPkts"),
+	/** Transmit Multicast Packet Count. */
+	MIB_DESC(1, 0x07, "nTxMulticastPkts"),
+	/** Transmit Size 64 Packet Count. */
+	MIB_DESC(1, 0x00, "nTx64BytePkts"),
+	/** Transmit Size 65-127 Packet Count. */
+	MIB_DESC(1, 0x01, "nTx127BytePkts"),
+	/** Transmit Size 128-255 Packet Count. */
+	MIB_DESC(1, 0x02, "nTx255BytePkts"),
+	/** Transmit Size 256-511 Packet Count. */
+	MIB_DESC(1, 0x03, "nTx511BytePkts"),
+	/** Transmit Size 512-1023 Packet Count. */
+	MIB_DESC(1, 0x04, "nTx1023BytePkts"),
+	/** Transmit Size 1024-1522 (or more, if configured) Packet Count. */
+	MIB_DESC(1, 0x05, "nTxMaxBytePkts"),
+	/** Transmit Single Collision Count. */
+	MIB_DESC(1, 0x08, "nTxSingleCollCount"),
+	/** Transmit Multiple Collision Count. */
+	MIB_DESC(1, 0x09, "nTxMultCollCount"),
+	/** Transmit Late Collision Count. */
+	MIB_DESC(1, 0x0A, "nTxLateCollCount"),
+	/** Transmit Excessive Collision Count. */
+	MIB_DESC(1, 0x0B, "nTxExcessCollCount"),
+	/** Transmit Pause Packet Count. */
+	MIB_DESC(1, 0x0D, "nTxPauseCount"),
+	/** Transmit Drop Packet Count. */
+	MIB_DESC(1, 0x10, "nTxDroppedPkts"),
+	/** Transmit Good Byte Count (64 bit). */
+	MIB_DESC(2, 0x0E, "TxGoodBytes"),
 };
 
 static u32 gswip_switch_r32(struct gswip_priv *priv, u32 offset)
@@ -781,6 +874,62 @@ gswip_port_bridge_leave(struct dsa_switch *ds, int port,
 	}
 }
 
+static void gswip_get_strings(struct dsa_switch *ds, int port, u32 stringset, uint8_t *data)
+{
+	int i;
+
+	if (stringset != ETH_SS_STATS)
+		return;
+
+	for (i = 0; i < ARRAY_SIZE(gswip_rmon_cnt); i++)
+		strncpy(data + i * ETH_GSTRING_LEN, gswip_rmon_cnt[i].name,
+			ETH_GSTRING_LEN);
+}
+
+static u32 gswip_bcm_ram_entry_read(struct gswip_priv *priv, u32 table, u32 index)
+{
+	u32 result;
+
+	gswip_switch_w32(priv, index, BM_RAM_ADDR);
+	gswip_switch_w32_mask(priv, BM_RAM_CTRL_ADDR_MASK | BM_RAM_CTRL_OPMOD,
+			      table | BM_RAM_CTRL_BAS,
+			      BM_RAM_CTRL);
+
+	while (gswip_switch_r32(priv, BM_RAM_CTRL) & BM_RAM_CTRL_BAS)
+		cond_resched();
+
+	result = gswip_switch_r32(priv, BM_RAM_VAL(0));
+	result |= gswip_switch_r32(priv, BM_RAM_VAL(1)) << 16;
+
+	return result;
+}
+
+static void gswip_get_ethtool_stats(struct dsa_switch *ds, int port, uint64_t *data)
+{
+	struct gswip_priv *priv = ds->priv;
+	const struct gswip_rmon_cnt_desc *rmon_cnt;
+	int i;
+	u64 high;
+
+	for (i = 0; i < ARRAY_SIZE(gswip_rmon_cnt); i++) {
+		rmon_cnt = &gswip_rmon_cnt[i];
+
+		data[i] = gswip_bcm_ram_entry_read(priv, port, rmon_cnt->offset);
+		if (rmon_cnt->size == 2) {
+			high = gswip_bcm_ram_entry_read(priv, port, rmon_cnt->offset + 1);
+			data[i] |= high << 32;
+		}
+	}
+}
+
+static int gswip_get_sset_count(struct dsa_switch *ds, int port, int sset)
+{
+	if (sset != ETH_SS_STATS)
+		return 0;
+
+	return ARRAY_SIZE(gswip_rmon_cnt);
+}
+
 static const struct dsa_switch_ops gswip_switch_ops = {
 	.get_tag_protocol	= gswip_get_tag_protocol,
 	.setup			= gswip_setup,
@@ -790,6 +939,9 @@ static const struct dsa_switch_ops gswip_switch_ops = {
 	.port_stp_state_set	= gswip_stp_state_set,
 	.port_bridge_join	= gswip_port_bridge_join,
 	.port_bridge_leave	= gswip_port_bridge_leave,
+	.get_strings		= gswip_get_strings,
+	.get_ethtool_stats	= gswip_get_ethtool_stats,
+	.get_sset_count		= gswip_get_sset_count,
 };
 
 static int gswip_probe(struct platform_device *pdev)
