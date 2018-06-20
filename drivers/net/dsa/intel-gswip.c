@@ -229,8 +229,7 @@ struct gswip_vlan {
 	struct net_device *bridge;
 	u16 id;
 	u8 fid;
-	bool reserved;
-	bool free;
+	bool used;
 	u16 port_map;
 	u16 tag_map;
 };
@@ -496,7 +495,7 @@ static void xrx200_pce_table_entry_read(struct gswip_priv *priv,
 		tbl->val[i] = gswip_switch_r32(priv, PCE_TBL_VAL(i));
 
 	tbl->mask = gswip_switch_r32(priv, PCE_TBL_MASK);
-	
+
 	crtl = gswip_switch_r32(priv, PCE_TBL_CTRL);
 
 	tbl->type = !!(crtl & PCE_TBL_CTRL_TYPE);
@@ -586,7 +585,7 @@ static int gswip_setup(struct dsa_switch *ds)
 
 	/* enable Switch */
 	gswip_mdio_w32_mask(priv, 0, MDIO_GLOB_ENABLE, MDIO_GLOB);
-	
+
 	xrx200_pci_microcode(priv);
 
 	/* Default unknown Broadcat/Multicast/Unicast port maps */
@@ -755,6 +754,17 @@ static void gswip_stp_state_set(struct dsa_switch *ds, int port, u8 state)
 	gswip_switch_w32_mask(priv, PCE_PCTRL0_PSTATE_MASK, stp_state, PCE_PCTRL0x(port));
 }
 
+static struct gswip_vlan *gswip_vlan_entry(struct gswip_priv *priv, int vlan)
+{
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(priv->vlan); i++) {
+		if (priv->vlan[i].id == vlan && priv->vlan[i].used)
+			return &priv->vlan[i];
+	}
+	return NULL;
+}
+
 /*
  * The switch has a table with the active VLANs (XRX200_PCE_ACTVLAN_IDX)
  * with 64 possible entries and an other table (XRX200_PCE_VLANMAP_IDX)
@@ -767,7 +777,7 @@ gswip_port_bridge_join(struct dsa_switch *ds, int port,
 			struct net_device *bridge)
 {
 	struct gswip_priv *priv = ds->priv;
-	struct gswip_vlan *vlan_entry;
+	struct gswip_vlan *vlan_entry = NULL;
 	struct xrx200_pce_table_entry tbl = {0,};
 	int vlan;
 	int vlan_idx = -1;
@@ -779,44 +789,46 @@ gswip_port_bridge_join(struct dsa_switch *ds, int port,
 			break;
 		}
 	}
-	
-	/* Find a VLAN ID in the switch from 1000 to 1064 which is not 
-	 * used by trying all the 64 VLAN IDs and then checking all the 
+
+	/* Find a VLAN ID in the switch from 1000 to 1064 which is not
+	 * used by trying all the 64 VLAN IDs and then checking all the
 	 * 64 possible positions. The range was choose randomly. */
 	if (!vlan_entry) {
 		for (vlan = 1000; vlan < 1064; vlan++) {
+			/* check if the VLAN is used */
+			if (gswip_vlan_entry(priv, vlan))
+				continue;
+
 			for (i = 0; i < ARRAY_SIZE(priv->vlan); i++) {
-				if (priv->vlan[i].id == vlan && !priv->vlan[i].free)
-					break;
-				if (priv->vlan[i].free) {
+				if (!priv->vlan[i].used) {
 					vlan_entry = &priv->vlan[i];
 					vlan_idx = i;
+					break;
 				}
 			}
+
 			if (!vlan_entry)
 				return -EIO;
 
-			if (i == ARRAY_SIZE(priv->vlan)) {
-				vlan_entry->id = vlan;
-				vlan_entry->bridge = bridge;
-				vlan_entry->free = false;
-				vlan_entry->fid = vlan_idx + 1;
+			vlan_entry->id = vlan;
+			vlan_entry->bridge = bridge;
+			vlan_entry->used = true;
+			vlan_entry->fid = vlan_idx + 1;
 
-				tbl.index = vlan_idx;
-				tbl.table = XRX200_PCE_ACTVLAN_IDX;
-				tbl.key[0] = vlan_entry->id;
-				tbl.val[0] = vlan_entry->fid;
-				tbl.valid = true;
-				xrx200_pce_table_entry_write(priv, &tbl);
-				memset(&tbl, 0x0, sizeof(tbl));
-				
-				vlan_entry->port_map |= BIT(priv->cpu_port);
-				vlan_entry->tag_map |= BIT(priv->cpu_port);
-				break;
-			}
+			tbl.index = vlan_idx;
+			tbl.table = XRX200_PCE_ACTVLAN_IDX;
+			tbl.key[0] = vlan_entry->id;
+			tbl.val[0] = vlan_entry->fid;
+			tbl.valid = true;
+			xrx200_pce_table_entry_write(priv, &tbl);
+			memset(&tbl, 0x0, sizeof(tbl));
+
+			vlan_entry->port_map |= BIT(priv->cpu_port);
+			vlan_entry->tag_map |= BIT(priv->cpu_port);
+			break;
 		}
 	}
-	
+
 	if (!vlan_entry)
 		return -EIO;
 
