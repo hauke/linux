@@ -33,21 +33,9 @@
 #include <xway_dma.h>
 #include <lantiq_soc.h>
 
-
-#define XRX200_MAX_VLAN		64
-#define XRX200_PCE_ACTVLAN_IDX	0x01
-#define XRX200_PCE_VLANMAP_IDX	0x02
-
-#define XRX200_MAX_PORT		7
 #define XRX200_MAX_DMA		8
 
 #define XRX200_HEADROOM		4
-
-#define XRX200_TX_TIMEOUT	(10 * HZ)
-
-/* port type */
-#define XRX200_PORT_TYPE_PHY	1
-#define XRX200_PORT_TYPE_MAC	2
 
 /* DMA */
 #define XRX200_DMA_DATA_LEN	0x600
@@ -270,16 +258,6 @@ static struct net_device_stats *xrx200_get_stats (struct net_device *dev)
 	return &priv->stats;
 }
 
-static void xrx200_tx_timeout(struct net_device *dev)
-{
-	struct xrx200_priv *priv = netdev_priv(dev);
-
-	printk(KERN_ERR "%s: transmit timed out, disable the dma channel irq\n", dev->name);
-
-	priv->stats.tx_errors++;
-	netif_wake_queue(dev);
-}
-
 static int xrx200_start_xmit(struct sk_buff *skb, struct net_device *dev)
 {
 	struct xrx200_priv *priv = netdev_priv(dev);
@@ -432,7 +410,6 @@ static const struct net_device_ops xrx200_netdev_ops = {
 	.ndo_validate_addr	= eth_validate_addr,
 	.ndo_change_mtu		= eth_change_mtu,
 	.ndo_get_stats		= xrx200_get_stats,
-	.ndo_tx_timeout		= xrx200_tx_timeout,
 };
 
 static int xrx200_probe(struct platform_device *pdev)
@@ -457,7 +434,6 @@ static int xrx200_probe(struct platform_device *pdev)
 	priv->dev = dev;
 
 	net_dev->netdev_ops = &xrx200_netdev_ops;
-	net_dev->watchdog_timeo = XRX200_TX_TIMEOUT;
 	net_dev->needed_headroom = XRX200_HEADROOM;
 	SET_NETDEV_DEV(net_dev, dev);
 
@@ -493,7 +469,7 @@ static int xrx200_probe(struct platform_device *pdev)
 	}
 
 	mac = of_get_mac_address(np);
-	if (mac)
+	if (mac && is_valid_ether_addr(mac))
 		ether_addr_copy(net_dev->dev_addr, mac);
 	else
 		eth_hw_addr_random(net_dev);
