@@ -233,7 +233,7 @@ static int xrx200_poll_rx(struct napi_struct *napi, int budget)
 static void xrx200_tx_housekeeping(unsigned long ptr)
 {
 	struct xrx200_chan *ch = (struct xrx200_chan *) ptr;
-	int pkts = 0;
+	int pkts, bytes = 0;
 
 	spin_lock_bh(&ch->lock);
 	ltq_dma_ack_irq(&ch->dma);
@@ -241,6 +241,7 @@ static void xrx200_tx_housekeeping(unsigned long ptr)
 		struct sk_buff *skb = ch->skb[ch->tx_free];
 
 		pkts++;
+		bytes += skb->len;
 		ch->skb[ch->tx_free] = NULL;
 		dev_kfree_skb(skb);
 		memset(&ch->dma.desc_base[ch->tx_free], 0,
@@ -250,6 +251,8 @@ static void xrx200_tx_housekeeping(unsigned long ptr)
 	}
 	ltq_dma_enable_irq(&ch->dma);
 	spin_unlock_bh(&ch->lock);
+
+	netdev_completed_queue(ch->priv->net_dev, pkts, bytes);
 
 	if (!pkts)
 		return;
@@ -305,7 +308,7 @@ static int xrx200_start_xmit(struct sk_buff *skb, struct net_device *dev)
 	if (ch->dma.desc == ch->tx_free)
 		netif_stop_queue(dev);
 
-
+	netdev_sent_queue(dev, skb->len);
 	priv->stats.tx_packets++;
 	priv->stats.tx_bytes+=len;
 
