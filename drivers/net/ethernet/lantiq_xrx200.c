@@ -441,7 +441,6 @@ static int xrx200_probe(struct platform_device *pdev)
 	priv->dev = dev;
 
 	net_dev->netdev_ops = &xrx200_netdev_ops;
-	net_dev->needed_headroom = XRX200_HEADROOM;
 	SET_NETDEV_DEV(net_dev, dev);
 
 	/* load the memory ranges */
