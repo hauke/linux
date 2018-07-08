@@ -45,12 +45,29 @@
 #define PMAC_EWAN		0x002c
 
 #define PMAC_IPG_MASK		0xf
-#define PMAC_HD_CTL_AS		0x0008
-#define PMAC_HD_CTL_AC		0x0004
-#define PMAC_HD_CTL_RC		0x0010
-#define PMAC_HD_CTL_RXSH	0x0040
-#define PMAC_HD_CTL_AST		0x0080
-#define PMAC_HD_CTL_RST		0x0100
+
+/* Add Ethernet header to packets from DMA to PMAC */
+#define PMAC_HD_CTL_ADD		BIT(0)
+/* Add VLAN tag to Packets from DMA to PMAC */
+#define PMAC_HD_CTL_TAG		BIT(1)
+/* Add CRC to packets from DMA to PMAC */
+#define PMAC_HD_CTL_AC		BIT(2)
+/* Add status header to packets from PMAC to DMA */
+#define PMAC_HD_CTL_AS		BIT(3)
+/* Remove CRC from packets from PMAC to DMA */
+#define PMAC_HD_CTL_RC		BIT(4)
+/* Remove Layer-2 header from packets from PMAC to DMA */
+#define PMAC_HD_CTL_RL2		BIT(5)
+/* Status header is present from DMA to PMAC */
+#define PMAC_HD_CTL_RXSH	BIT(6)
+/* Add special tag from PMAC to switch */
+#define PMAC_HD_CTL_AST		BIT(7)
+/* Remove specail Tag from PMAC to DMA */
+#define PMAC_HD_CTL_RST		BIT(8)
+/* Check CRC from DMA to PMAC */
+#define PMAC_HD_CTL_CCRC	BIT(9)
+/* Enable reaction to Pause frames in the PMAC */
+#define PMAC_HD_CTL_FC		BIT(10)
 
 /* MAC */
 #define MAC_FLEN_REG		(0x2314)
