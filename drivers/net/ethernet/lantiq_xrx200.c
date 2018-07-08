@@ -33,17 +33,10 @@
 #include <xway_dma.h>
 #include <lantiq_soc.h>
 
-#define XRX200_MAX_DMA		8
-
-#define XRX200_HEADROOM		4
-
 /* DMA */
 #define XRX200_DMA_DATA_LEN	0x600
-#define XRX200_DMA_IRQ		INT_NUM_IM2_IRL0
 #define XRX200_DMA_RX		0
 #define XRX200_DMA_TX		1
-#define XRX200_DMA_IS_TX(x)	(x%2)
-#define XRX200_DMA_IS_RX(x)	(!XRX200_DMA_IS_TX(x))
 
 
 /* cpu port mac */
@@ -113,14 +106,10 @@ static int xrx200_open(struct net_device *dev)
 {
 	struct xrx200_priv *priv = netdev_priv(dev);
 
-	if (!priv->chan_tx.dma.irq)
-		return -EIO;
 	spin_lock_bh(&priv->chan_tx.lock);
 	ltq_dma_open(&priv->chan_tx.dma);
 	spin_unlock_bh(&priv->chan_tx.lock);
 
-	if (!priv->chan_rx.dma.irq)
-		return -EIO;
 	spin_lock_bh(&priv->chan_rx.lock);
 	napi_enable(&priv->chan_rx.napi);
 	ltq_dma_open(&priv->chan_rx.dma);
@@ -137,17 +126,10 @@ static int xrx200_close(struct net_device *dev)
 
 	netif_stop_queue(dev);
 
-	if (!priv->chan_rx.dma.irq)
-		return -EIO;
-
 	napi_disable(&priv->chan_rx.napi);
 	spin_lock_bh(&priv->chan_rx.lock);
 	ltq_dma_close(&priv->chan_rx.dma);
 	spin_unlock_bh(&priv->chan_rx.lock);
-
-
-	if (!priv->chan_tx.dma.irq)
-		return -EIO;
 
 	spin_lock_bh(&priv->chan_tx.lock);
 	ltq_dma_close(&priv->chan_tx.dma);
@@ -203,7 +185,7 @@ static void xrx200_hw_receive(struct xrx200_chan *ch)
 	skb->protocol = eth_type_trans(skb, priv->net_dev);
 	netif_receive_skb(skb);
 	priv->stats.rx_packets++;
-	priv->stats.rx_bytes+=len;
+	priv->stats.rx_bytes += len;
 }
 
 static int xrx200_poll_rx(struct napi_struct *napi, int budget)
