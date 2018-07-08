@@ -614,6 +614,11 @@ static int gswip_setup(struct dsa_switch *ds)
 	gswip_switch_w32(priv, 1518 + 8 + 4 * 2, MAC_FLEN_REG); //  MAC frame + 8-byte special tag + 4-byte VLAN tag * 2
 	gswip_switch_w32_mask(priv, 0, GSWIP_BM_QUEUE_GCTRL_GL_MOD, GSWIP_BM_QUEUE_GCTRL);
 
+	/* VLAN aware Switching */
+	gswip_switch_w32_mask(priv, 0, BIT(14), PCE_GCTRL_REG(0));
+
+	/* Mac Address Table Lock */
+	gswip_switch_w32_mask(priv, 0, BIT(2) | BIT(3), PCE_GCTRL_REG(1));
 	return 0;
 }
 
