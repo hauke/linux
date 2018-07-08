@@ -189,9 +189,9 @@
 #define  PCE_TBL_CTRL_OPMOD_KSRD	0x40
 #define  PCE_TBL_CTRL_OPMOD_KSWR	0x60
 #define  PCE_TBL_CTRL_ADDR_MASK		GENMASK(4, 0)
-#define PCE_PMAP1		0x114c
-#define PCE_PMAP2		0x1150
-#define PCE_PMAP3		0x1154
+#define PCE_PMAP1		0x114c /* Monitoring port map */
+#define PCE_PMAP2		0x1150 /* Default Multicast port map */
+#define PCE_PMAP3		0x1154 /* Default Unknown Unicast port map */
 #define PCE_GCTRL_REG(x)	(0x1158 + (x * 4))
 #define PCE_PCTRL_REG(p, x)	(0x1200 + (((p * 0xa) + x) * 4))
 
