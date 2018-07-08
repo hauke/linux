@@ -352,6 +352,7 @@ static int xrx200_dma_init(struct xrx200_priv *priv)
 	ltq_dma_init_port(DMA_PORT_ETOP);
 
 	spin_lock_init(&ch_rx->lock);
+	ch_rx->dma.nr = XRX200_DMA_RX;
 	ch_rx->priv = priv;
 
 	ltq_dma_alloc_rx(&ch_rx->dma);
@@ -364,6 +365,7 @@ static int xrx200_dma_init(struct xrx200_priv *priv)
 		pr_err("net-xrx200: failed to request irq %d\n", ch_rx->dma.irq);
 
 	spin_lock_init(&ch_tx->lock);
+	ch_tx->dma.nr = XRX200_DMA_TX;
 	ch_tx->priv = priv;
 
 	ltq_dma_alloc_tx(&ch_tx->dma);
