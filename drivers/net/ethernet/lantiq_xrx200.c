@@ -211,19 +211,18 @@ static int xrx200_poll_rx(struct napi_struct *napi, int budget)
 	struct xrx200_chan *ch = container_of(napi,
 				struct xrx200_chan, napi);
 	int rx = 0;
-	int complete = 0;
 
-	while ((rx < budget) && !complete) {
+	while (rx < budget) {
 		struct ltq_dma_desc *desc = &ch->dma.desc_base[ch->dma.desc];
 		if ((desc->ctl & (LTQ_DMA_OWN | LTQ_DMA_C)) == LTQ_DMA_C) {
 			xrx200_hw_receive(ch);
 			rx++;
 		} else {
-			complete = 1;
+			break;
 		}
 	}
 
-	if (complete || !rx) {
+	if (rx < budget) {
 		napi_complete(&ch->napi);
 		ltq_dma_enable_irq(&ch->dma);
 	}
