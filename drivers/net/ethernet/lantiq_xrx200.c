@@ -42,7 +42,6 @@
 #define XRX200_DMA_IRQ		INT_NUM_IM2_IRL0
 #define XRX200_DMA_RX		0
 #define XRX200_DMA_TX		1
-#define XRX200_DMA_TX_2		3
 #define XRX200_DMA_IS_TX(x)	(x%2)
 #define XRX200_DMA_IS_RX(x)	(!XRX200_DMA_IS_TX(x))
 
@@ -344,9 +343,6 @@ static int xrx200_dma_init(struct xrx200_priv *priv)
 		if (i == XRX200_DMA_TX) {
 			ltq_dma_alloc_tx(&ch->dma);
 			err = request_irq(irq, xrx200_dma_irq, 0, "vrx200_tx", priv);
-		} else if (i == XRX200_DMA_TX_2) {
-			ltq_dma_alloc_tx(&ch->dma);
-			err = request_irq(irq, xrx200_dma_irq, 0, "vrx200_tx_2", priv);
 		} else if (i == XRX200_DMA_RX) {
 			ltq_dma_alloc_rx(&ch->dma);
 			for (ch->dma.desc = 0; ch->dma.desc < LTQ_DESC_NUM;
@@ -479,7 +475,6 @@ static int xrx200_probe(struct platform_device *pdev)
 	xrx200_hw_init(priv);
 
 	tasklet_init(&priv->chan[XRX200_DMA_TX].tasklet, xrx200_tx_housekeeping, (u32) &priv->chan[XRX200_DMA_TX]);
-	tasklet_init(&priv->chan[XRX200_DMA_TX_2].tasklet, xrx200_tx_housekeeping, (u32) &priv->chan[XRX200_DMA_TX_2]);
 
 	/* setup NAPI */
 	netif_napi_add(net_dev, &priv->chan[XRX200_DMA_RX].napi, xrx200_poll_rx, 32);
