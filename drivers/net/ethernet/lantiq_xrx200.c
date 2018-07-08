@@ -313,7 +313,6 @@ static irqreturn_t xrx200_dma_irq_tx(int irq, void *ptr)
 	return IRQ_HANDLED;
 }
 
-
 static irqreturn_t xrx200_dma_irq_rx(int irq, void *ptr)
 {
 	struct xrx200_priv *priv = ptr;
@@ -390,7 +389,6 @@ static void xrx200_hw_cleanup(struct xrx200_priv *priv)
 	clk_put(priv->clk);
 }
 
-
 static const struct net_device_ops xrx200_netdev_ops = {
 	.ndo_open		= xrx200_open,
 	.ndo_stop		= xrx200_close,
@@ -424,6 +422,8 @@ static int xrx200_probe(struct platform_device *pdev)
 
 	net_dev->netdev_ops = &xrx200_netdev_ops;
 	SET_NETDEV_DEV(net_dev, dev);
+	net_dev->min_mtu = ETH_ZLEN;
+	net_dev->max_mtu = XRX200_DMA_DATA_LEN;
 
 	/* load the memory ranges */
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
