@@ -22,16 +22,12 @@
 #include <linux/platform_device.h>
 #include <linux/interrupt.h>
 #include <linux/clk.h>
-#include <linux/if_vlan.h>
 #include <asm/delay.h>
 
 #include <linux/of_net.h>
-#include <linux/of_mdio.h>
-#include <linux/of_gpio.h>
 #include <linux/of_platform.h>
 
 #include <xway_dma.h>
-#include <lantiq_soc.h>
 
 /* DMA */
 #define XRX200_DMA_DATA_LEN	0x600
@@ -40,12 +36,10 @@
 
 
 /* cpu port mac */
-#define PMAC_HD_CTL		0x0000
 #define PMAC_RX_IPG		0x0024
-#define PMAC_EWAN		0x002c
+#define PMAC_RX_IPG_MASK	0xf
 
-#define PMAC_IPG_MASK		0xf
-
+#define PMAC_HD_CTL		0x0000
 /* Add Ethernet header to packets from DMA to PMAC */
 #define PMAC_HD_CTL_ADD		BIT(0)
 /* Add VLAN tag to Packets from DMA to PMAC */
@@ -69,10 +63,6 @@
 /* Enable reaction to Pause frames in the PMAC */
 #define PMAC_HD_CTL_FC		BIT(10)
 
-/* MAC */
-#define MAC_FLEN_REG		(0x2314)
-#define MAC_CTRL_REG(p, x)	(0x240c + (((p * 0xc) + x) * 4))
-
 
 struct xrx200_chan {
 	int tx_free;
@@ -82,7 +72,6 @@ struct xrx200_chan {
 	struct ltq_dma_channel dma;
 	struct sk_buff *skb[LTQ_DESC_NUM];
 
-	spinlock_t lock;
 	struct xrx200_priv *priv;
 };
 
@@ -119,11 +108,11 @@ static void xrx200_pmac_mask(struct xrx200_priv *priv, u32 clear, u32 set, u32 o
 	xrx200_pmac_w32(priv, val, offset);
 }
 
+/* drop all the packets from the DMA ring */
 static void xrx200_flush_dma(struct xrx200_chan *ch)
 {
 	int i;
 
-	udelay(10);
 	for (i = 0; i < LTQ_DESC_NUM; i++) {
 		struct ltq_dma_desc *desc = &ch->dma.desc_base[ch->dma.desc];
 
@@ -140,17 +129,20 @@ static int xrx200_open(struct net_device *dev)
 {
 	struct xrx200_priv *priv = netdev_priv(dev);
 
-	spin_lock_bh(&priv->chan_tx.lock);
 	ltq_dma_open(&priv->chan_tx.dma);
 	ltq_dma_enable_irq(&priv->chan_tx.dma);
-	spin_unlock_bh(&priv->chan_tx.lock);
 
-	spin_lock_bh(&priv->chan_rx.lock);
 	napi_enable(&priv->chan_rx.napi);
 	ltq_dma_open(&priv->chan_rx.dma);
+	/* The boot loader does not always deactivate the receiving of frames
+	 * on the ports and then some packets queue up in the PPE buffers.
+	 * They already passed the PMAC so they do not have the tags
+	 * configured here. Read the these packets here and drop them.
+	 * The HW should have written them into memory after 10us
+	 */
+	udelay(10);
 	xrx200_flush_dma(&priv->chan_rx);
 	ltq_dma_enable_irq(&priv->chan_rx.dma);
-	spin_unlock_bh(&priv->chan_rx.lock);
 
 	netif_wake_queue(dev);
 
@@ -164,28 +156,34 @@ static int xrx200_close(struct net_device *dev)
 	netif_stop_queue(dev);
 
 	napi_disable(&priv->chan_rx.napi);
-	spin_lock_bh(&priv->chan_rx.lock);
 	ltq_dma_close(&priv->chan_rx.dma);
-	spin_unlock_bh(&priv->chan_rx.lock);
 
-	spin_lock_bh(&priv->chan_tx.lock);
 	ltq_dma_close(&priv->chan_tx.dma);
-	spin_unlock_bh(&priv->chan_tx.lock);
 
 	return 0;
 }
 
 static int xrx200_alloc_skb(struct xrx200_chan *ch)
 {
+	int ret = 0;
+
 #define DMA_PAD	(NET_IP_ALIGN + NET_SKB_PAD)
 	ch->skb[ch->dma.desc] = dev_alloc_skb(XRX200_DMA_DATA_LEN + DMA_PAD);
-	if (!ch->skb[ch->dma.desc])
+	if (!ch->skb[ch->dma.desc]) {
+		ret = -ENOMEM;
 		goto skip;
+	}
 
 	skb_reserve(ch->skb[ch->dma.desc], NET_SKB_PAD);
 	ch->dma.desc_base[ch->dma.desc].addr = dma_map_single(ch->priv->dev,
 		ch->skb[ch->dma.desc]->data, XRX200_DMA_DATA_LEN,
 			DMA_FROM_DEVICE);
+	if (unlikely(dma_mapping_error(ch->priv->dev, ch->dma.desc_base[ch->dma.desc].addr))) {
+		dev_kfree_skb_any(ch->skb[ch->dma.desc]);
+		ret = -ENOMEM;
+		goto skip;
+	}
+
 	ch->dma.desc_base[ch->dma.desc].addr =
 		CPHYSADDR(ch->skb[ch->dma.desc]->data);
 	skb_reserve(ch->skb[ch->dma.desc], NET_IP_ALIGN);
@@ -195,10 +193,10 @@ skip:
 		LTQ_DMA_OWN | LTQ_DMA_RX_OFFSET(NET_IP_ALIGN) |
 		XRX200_DMA_DATA_LEN;
 
-	return 0;
+	return ret;
 }
 
-static void xrx200_hw_receive(struct xrx200_chan *ch)
+static int xrx200_hw_receive(struct xrx200_chan *ch)
 {
 	struct xrx200_priv *priv = ch->priv;
 	struct ltq_dma_desc *desc = &ch->dma.desc_base[ch->dma.desc];
@@ -214,7 +212,7 @@ static void xrx200_hw_receive(struct xrx200_chan *ch)
 	if (ret) {
 		netdev_err(priv->net_dev,
 			"failed to allocate new rx buffer\n");
-		return;
+		return ret;
 	}
 
 	skb_put(skb, len);
@@ -223,6 +221,8 @@ static void xrx200_hw_receive(struct xrx200_chan *ch)
 	netif_receive_skb(skb);
 	priv->stats.rx_packets++;
 	priv->stats.rx_bytes += len;
+	
+	return 0;
 }
 
 static int xrx200_poll_rx(struct napi_struct *napi, int budget)
@@ -230,11 +230,14 @@ static int xrx200_poll_rx(struct napi_struct *napi, int budget)
 	struct xrx200_chan *ch = container_of(napi,
 				struct xrx200_chan, napi);
 	int rx = 0;
+	int ret;
 
 	while (rx < budget) {
 		struct ltq_dma_desc *desc = &ch->dma.desc_base[ch->dma.desc];
 		if ((desc->ctl & (LTQ_DMA_OWN | LTQ_DMA_C)) == LTQ_DMA_C) {
-			xrx200_hw_receive(ch);
+			ret = xrx200_hw_receive(ch);
+			if (ret)
+				return ret;
 			rx++;
 		} else {
 			break;
@@ -252,9 +255,9 @@ static int xrx200_poll_rx(struct napi_struct *napi, int budget)
 static void xrx200_tx_housekeeping(unsigned long ptr)
 {
 	struct xrx200_chan *ch = (struct xrx200_chan *) ptr;
-	int pkts = 0, bytes = 0;
+	int pkts = 0;
+	int bytes = 0;
 
-	spin_lock_bh(&ch->lock);
 	ltq_dma_ack_irq(&ch->dma);
 	while ((ch->dma.desc_base[ch->tx_free].ctl & (LTQ_DMA_OWN | LTQ_DMA_C)) == LTQ_DMA_C) {
 		struct sk_buff *skb = ch->skb[ch->tx_free];
@@ -269,7 +272,6 @@ static void xrx200_tx_housekeeping(unsigned long ptr)
 		ch->tx_free %= LTQ_DESC_NUM;
 	}
 	ltq_dma_enable_irq(&ch->dma);
-	spin_unlock_bh(&ch->lock);
 
 	netdev_completed_queue(ch->priv->net_dev, pkts, bytes);
 
@@ -292,7 +294,7 @@ static int xrx200_start_xmit(struct sk_buff *skb, struct net_device *dev)
 	struct xrx200_chan *ch;
 	struct ltq_dma_desc *desc;
 	u32 byte_offset;
-	int ret = NETDEV_TX_OK;
+	dma_addr_t mapping;
 	int len;
 
 	ch = &priv->chan_tx;
@@ -305,20 +307,21 @@ static int xrx200_start_xmit(struct sk_buff *skb, struct net_device *dev)
 	/* dma needs to start on a 16 byte aligned address */
 	byte_offset = CPHYSADDR(skb->data) % 16;
 
-	spin_lock_bh(&ch->lock);
 	if ((desc->ctl & (LTQ_DMA_OWN | LTQ_DMA_C)) || ch->skb[ch->dma.desc]) {
 		netdev_err(dev, "tx ring full\n");
 		netif_stop_queue(dev);
-		ret = NETDEV_TX_BUSY;
-		goto out;
+		return NETDEV_TX_BUSY;
 	}
 
 	ch->skb[ch->dma.desc] = skb;
 
 	netif_trans_update(dev);
 
-	desc->addr = ((unsigned int) dma_map_single(priv->dev, skb->data, len,
-						DMA_TO_DEVICE)) - byte_offset;
+	mapping = dma_map_single(priv->dev, skb->data, len, DMA_TO_DEVICE);
+	if (unlikely(dma_mapping_error(priv->dev, mapping)))
+		goto err_drop;
+
+	desc->addr = mapping - byte_offset;
 	wmb();
 	desc->ctl = LTQ_DMA_OWN | LTQ_DMA_SOP | LTQ_DMA_EOP |
 		LTQ_DMA_TX_OFFSET(byte_offset) | (len & LTQ_DMA_SIZE_MASK);
@@ -329,12 +332,15 @@ static int xrx200_start_xmit(struct sk_buff *skb, struct net_device *dev)
 
 	netdev_sent_queue(dev, skb->len);
 	priv->stats.tx_packets++;
-	priv->stats.tx_bytes+=len;
+	priv->stats.tx_bytes += len;
 
-out:
-	spin_unlock_bh(&ch->lock);
+	return NETDEV_TX_OK;
 
-	return ret;
+err_drop:
+	dev_kfree_skb(skb);
+	priv->stats.tx_dropped++;
+	priv->stats.tx_errors++;
+	return NETDEV_TX_OK;
 }
 
 static const struct net_device_ops xrx200_netdev_ops = {
@@ -375,53 +381,66 @@ static irqreturn_t xrx200_dma_irq_rx(int irq, void *ptr)
 
 static int xrx200_dma_init(struct xrx200_priv *priv)
 {
-	int err = 0;
 	struct xrx200_chan *ch_rx = &priv->chan_rx;
 	struct xrx200_chan *ch_tx = &priv->chan_tx;
+	int ret = 0;
+	int i;
 
 	ltq_dma_init_port(DMA_PORT_ETOP);
 
-	spin_lock_init(&ch_rx->lock);
 	ch_rx->dma.nr = XRX200_DMA_RX;
 	ch_rx->priv = priv;
 
 	ltq_dma_alloc_rx(&ch_rx->dma);
-	for (ch_rx->dma.desc = 0; ch_rx->dma.desc < LTQ_DESC_NUM; ch_rx->dma.desc++)
-		if (xrx200_alloc_skb(ch_rx))
-			err = -ENOMEM;
+	for (ch_rx->dma.desc = 0; ch_rx->dma.desc < LTQ_DESC_NUM; ch_rx->dma.desc++) {
+		ret = xrx200_alloc_skb(ch_rx);
+		if (ret)
+			goto rx_free;
+	}
 	ch_rx->dma.desc = 0;
-	err = devm_request_irq(priv->dev, ch_rx->dma.irq, xrx200_dma_irq_rx, 0, "vrx200_rx", priv);
-	if (err) {
+	ret = devm_request_irq(priv->dev, ch_rx->dma.irq, xrx200_dma_irq_rx, 0, "vrx200_rx", priv);
+	if (ret) {
 		pr_err("net-xrx200: failed to request irq %d\n", ch_rx->dma.irq);
-		return ret;
+		goto rx_ring_free;
 	}
 
-	spin_lock_init(&ch_tx->lock);
 	ch_tx->dma.nr = XRX200_DMA_TX;
 	ch_tx->priv = priv;
 
 	ltq_dma_alloc_tx(&ch_tx->dma);
-	err = devm_request_irq(priv->dev, ch_tx->dma.irq, xrx200_dma_irq_tx, 0, "vrx200_tx", priv);
-	if (err) {
+	ret = devm_request_irq(priv->dev, ch_tx->dma.irq, xrx200_dma_irq_tx, 0, "vrx200_tx", priv);
+	if (ret) {
 		pr_err("net-xrx200: failed to request irq %d\n", ch_tx->dma.irq);
-		return ret;
+		goto tx_free;
 	}
 
-	return err;
+	return ret;
+
+tx_free:
+	ltq_dma_free(&ch_tx->dma);
+
+rx_ring_free:
+	/* free the allocated RX ring */
+	for (i = 0; i < LTQ_DESC_NUM; i++) {
+		if (priv->chan_rx.skb[i])
+			dev_kfree_skb_any(priv->chan_rx.skb[i]);
+	}
+
+rx_free:
+	ltq_dma_free(&ch_rx->dma);
+	return ret;
 }
 
-static void xrx200_hw_init(struct xrx200_priv *priv)
+static void xrx200_hw_cleanup(struct xrx200_priv *priv)
 {
-	/* enable clock gate */
-	clk_enable(priv->clk);
+	int i;
 
-	/* set IPG to 12 */
-	xrx200_pmac_mask(priv, PMAC_IPG_MASK, 0xb, PMAC_RX_IPG);
+	ltq_dma_free(&priv->chan_tx.dma);
+	ltq_dma_free(&priv->chan_rx.dma);
 
-	/* enable status header, enable CRC */
-	xrx200_pmac_mask(priv, 0,
-		PMAC_HD_CTL_RST | PMAC_HD_CTL_AST | PMAC_HD_CTL_RXSH | PMAC_HD_CTL_AS | PMAC_HD_CTL_AC | PMAC_HD_CTL_RC,
-		PMAC_HD_CTL);
+	/* free the allocated RX ring */
+	for (i = 0; i < LTQ_DESC_NUM; i++)
+		dev_kfree_skb_any(priv->chan_rx.skb[i]);
 }
 
 static int xrx200_probe(struct platform_device *pdev)
@@ -476,6 +495,9 @@ static int xrx200_probe(struct platform_device *pdev)
 		return -ENOENT;
 	}
 
+	/* Make sure the firmware of the embedded GPHY is loaded before,
+	 * otherwise they will not be detectable on the MDIO bus.
+	 */
 	of_for_each_phandle(&it, err, np, "lantiq,phys", NULL, 0) {
 		phy_np = it.node;
 		if (phy_np) {
@@ -501,8 +523,22 @@ static int xrx200_probe(struct platform_device *pdev)
 		eth_hw_addr_random(net_dev);
 
 	/* bring up the dma engine and IP core */
-	xrx200_dma_init(priv);
-	xrx200_hw_init(priv);
+	err = xrx200_dma_init(priv);
+	if (err)
+		return err;
+
+	/* enable clock gate */
+	err = clk_prepare_enable(priv->clk);
+	if (err)
+		goto err_uninit_dma;
+
+	/* set IPG to 12 */
+	xrx200_pmac_mask(priv, PMAC_RX_IPG_MASK, 0xb, PMAC_RX_IPG);
+
+	/* enable status header, enable CRC */
+	xrx200_pmac_mask(priv, 0,
+		PMAC_HD_CTL_RST | PMAC_HD_CTL_AST | PMAC_HD_CTL_RXSH | PMAC_HD_CTL_AS | PMAC_HD_CTL_AC | PMAC_HD_CTL_RC,
+		PMAC_HD_CTL);
 
 	tasklet_init(&priv->chan_tx.tasklet, xrx200_tx_housekeeping, (u32) &priv->chan_tx);
 
@@ -511,24 +547,21 @@ static int xrx200_probe(struct platform_device *pdev)
 
 	platform_set_drvdata(pdev, priv);
 
-	return register_netdev(net_dev);
+	err = register_netdev(net_dev);
+	if (err)
+		goto err_unprepare_clk;
+	return err;
+
+err_unprepare_clk:
+	clk_disable_unprepare(priv->clk);
+
+err_uninit_dma:
+	xrx200_hw_cleanup(priv);
+
+	return 0;
 }
 
-static void xrx200_hw_cleanup(struct xrx200_priv *priv)
-{
-	int i;
 
-	ltq_dma_free(&priv->chan_tx.dma);
-	ltq_dma_free(&priv->chan_rx.dma);
-
-	/* free the allocated RX ring */
-	for (i = 0; i < LTQ_DESC_NUM; i++)
-		dev_kfree_skb_any(priv->chan_rx.skb[i]);
-
-	/* release the clock */
-	clk_disable(priv->clk);
-	clk_put(priv->clk);
-}
 
 static int xrx200_remove(struct platform_device *pdev)
 {
@@ -539,11 +572,14 @@ static int xrx200_remove(struct platform_device *pdev)
 	netif_stop_queue(net_dev);
 	netif_napi_del(&priv->chan_rx.napi);
 
-	/* shut down hardware */
-	xrx200_hw_cleanup(priv);
-
 	/* remove the actual device */
 	unregister_netdev(net_dev);
+
+	/* release the clock */
+	clk_disable_unprepare(priv->clk);
+
+	/* shut down hardware */
+	xrx200_hw_cleanup(priv);
 
 	return 0;
 }

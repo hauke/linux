@@ -387,7 +387,7 @@ static void gswip_mii_w32_mask(struct gswip_priv *priv, u32 clear, u32 set, u32 
 }
 
 
-static inline int xrx200_mdio_poll(struct gswip_priv *priv)
+static int xrx200_mdio_poll(struct gswip_priv *priv)
 {
 	unsigned cnt = 10000;
 
@@ -395,6 +395,7 @@ static inline int xrx200_mdio_poll(struct gswip_priv *priv)
 		unsigned ctrl = gswip_mdio_r32(priv, MDIO_CTRL);
 		if ((ctrl & MDIO_BUSY) == 0)
 			return 0;
+		cpu_relax();
 	}
 
 	return 1;
@@ -405,7 +406,7 @@ static int xrx200_mdio_wr(struct mii_bus *bus, int addr, int reg, u16 val)
 	struct gswip_priv *priv = bus->priv;
 
 	if (xrx200_mdio_poll(priv))
-		return 1;
+		return -EIO;
 
 	gswip_mdio_w32(priv, val, MDIO_WRITE);
 	gswip_mdio_w32(priv, MDIO_BUSY | MDIO_WR |
@@ -421,7 +422,7 @@ static int xrx200_mdio_rd(struct mii_bus *bus, int addr, int reg)
 	struct gswip_priv *priv = bus->priv;
 
 	if (xrx200_mdio_poll(priv))
-		return -1;
+		return -EIO;
 
 	gswip_mdio_w32(priv, MDIO_BUSY | MDIO_RD |
 		((addr & MDIO_MASK) << MDIO_ADDRSHIFT) |
@@ -429,7 +430,7 @@ static int xrx200_mdio_rd(struct mii_bus *bus, int addr, int reg)
 		MDIO_CTRL);
 
 	if (xrx200_mdio_poll(priv))
-		return -1;
+		return -EIO;
 
 	return gswip_mdio_r32(priv, MDIO_READ);
 }
@@ -450,10 +451,7 @@ static int gswip_mdio(struct gswip_priv *priv, struct device_node *mdio_np)
 	ds->slave_mii_bus->parent = priv->dev;
 	ds->slave_mii_bus->phy_mask = ~ds->phys_mii_mask;
 
-	if (of_mdiobus_register(ds->slave_mii_bus, mdio_np))
-		return -ENXIO;
-
-	return 0;
+	return of_mdiobus_register(ds->slave_mii_bus, mdio_np);
 }
 
 struct xrx200_pce_table_entry {
