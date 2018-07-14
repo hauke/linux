@@ -110,7 +110,7 @@ static void xrx200_pmac_w32(struct xrx200_priv *priv, u32 val, u32 offset)
 	return __raw_writel(val, priv->pmac_reg + offset);
 }
 
-static void xrx200_switch_w32_mask(struct xrx200_priv *priv, u32 clear, u32 set, u32 offset)
+static void xrx200_pmac_mask(struct xrx200_priv *priv, u32 clear, u32 set, u32 offset)
 {
 	u32 val = xrx200_pmac_r32(priv, offset);
 
@@ -402,10 +402,10 @@ static void xrx200_hw_init(struct xrx200_priv *priv)
 	clk_enable(priv->clk);
 
 	/* set IPG to 12 */
-	xrx200_switch_w32_mask(priv, PMAC_IPG_MASK, 0xb, PMAC_RX_IPG);
+	xrx200_pmac_mask(priv, PMAC_IPG_MASK, 0xb, PMAC_RX_IPG);
 
 	/* enable status header, enable CRC */
-	xrx200_switch_w32_mask(priv, 0,
+	xrx200_pmac_mask(priv, 0,
 		PMAC_HD_CTL_RST | PMAC_HD_CTL_AST | PMAC_HD_CTL_RXSH | PMAC_HD_CTL_AS | PMAC_HD_CTL_AC | PMAC_HD_CTL_RC,
 		PMAC_HD_CTL);
 }
