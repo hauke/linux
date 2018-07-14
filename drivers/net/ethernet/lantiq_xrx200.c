@@ -279,7 +279,7 @@ static void xrx200_tx_housekeeping(unsigned long ptr)
 	netif_wake_queue(ch->priv->net_dev);
 }
 
-static struct net_device_stats *xrx200_get_stats (struct net_device *dev)
+static struct net_device_stats *xrx200_get_stats(struct net_device *dev)
 {
 	struct xrx200_priv *priv = netdev_priv(dev);
 
@@ -337,6 +337,16 @@ out:
 	return ret;
 }
 
+static const struct net_device_ops xrx200_netdev_ops = {
+	.ndo_open		= xrx200_open,
+	.ndo_stop		= xrx200_close,
+	.ndo_start_xmit		= xrx200_start_xmit,
+	.ndo_set_mac_address	= eth_mac_addr,
+	.ndo_validate_addr	= eth_validate_addr,
+	.ndo_change_mtu		= eth_change_mtu,
+	.ndo_get_stats		= xrx200_get_stats,
+};
+
 static irqreturn_t xrx200_dma_irq_tx(int irq, void *ptr)
 {
 	struct xrx200_priv *priv = ptr;
@@ -381,8 +391,10 @@ static int xrx200_dma_init(struct xrx200_priv *priv)
 			err = -ENOMEM;
 	ch_rx->dma.desc = 0;
 	err = devm_request_irq(priv->dev, ch_rx->dma.irq, xrx200_dma_irq_rx, 0, "vrx200_rx", priv);
-	if (err)
+	if (err) {
 		pr_err("net-xrx200: failed to request irq %d\n", ch_rx->dma.irq);
+		return ret;
+	}
 
 	spin_lock_init(&ch_tx->lock);
 	ch_tx->dma.nr = XRX200_DMA_TX;
@@ -390,8 +402,10 @@ static int xrx200_dma_init(struct xrx200_priv *priv)
 
 	ltq_dma_alloc_tx(&ch_tx->dma);
 	err = devm_request_irq(priv->dev, ch_tx->dma.irq, xrx200_dma_irq_tx, 0, "vrx200_tx", priv);
-	if (err)
+	if (err) {
 		pr_err("net-xrx200: failed to request irq %d\n", ch_tx->dma.irq);
+		return ret;
+	}
 
 	return err;
 }
@@ -409,32 +423,6 @@ static void xrx200_hw_init(struct xrx200_priv *priv)
 		PMAC_HD_CTL_RST | PMAC_HD_CTL_AST | PMAC_HD_CTL_RXSH | PMAC_HD_CTL_AS | PMAC_HD_CTL_AC | PMAC_HD_CTL_RC,
 		PMAC_HD_CTL);
 }
-
-static void xrx200_hw_cleanup(struct xrx200_priv *priv)
-{
-	int i;
-
-	ltq_dma_free(&priv->chan_tx.dma);
-	ltq_dma_free(&priv->chan_rx.dma);
-
-	/* free the allocated RX ring */
-	for (i = 0; i < LTQ_DESC_NUM; i++)
-		dev_kfree_skb_any(priv->chan_rx.skb[i]);
-
-	/* release the clock */
-	clk_disable(priv->clk);
-	clk_put(priv->clk);
-}
-
-static const struct net_device_ops xrx200_netdev_ops = {
-	.ndo_open		= xrx200_open,
-	.ndo_stop		= xrx200_close,
-	.ndo_start_xmit		= xrx200_start_xmit,
-	.ndo_set_mac_address	= eth_mac_addr,
-	.ndo_validate_addr	= eth_validate_addr,
-	.ndo_change_mtu		= eth_change_mtu,
-	.ndo_get_stats		= xrx200_get_stats,
-};
 
 static int xrx200_probe(struct platform_device *pdev)
 {
@@ -524,6 +512,22 @@ static int xrx200_probe(struct platform_device *pdev)
 	platform_set_drvdata(pdev, priv);
 
 	return register_netdev(net_dev);
+}
+
+static void xrx200_hw_cleanup(struct xrx200_priv *priv)
+{
+	int i;
+
+	ltq_dma_free(&priv->chan_tx.dma);
+	ltq_dma_free(&priv->chan_rx.dma);
+
+	/* free the allocated RX ring */
+	for (i = 0; i < LTQ_DESC_NUM; i++)
+		dev_kfree_skb_any(priv->chan_rx.skb[i]);
+
+	/* release the clock */
+	clk_disable(priv->clk);
+	clk_put(priv->clk);
 }
 
 static int xrx200_remove(struct platform_device *pdev)
