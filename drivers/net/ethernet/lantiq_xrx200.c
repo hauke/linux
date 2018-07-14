@@ -119,17 +119,37 @@ static void xrx200_switch_w32_mask(struct xrx200_priv *priv, u32 clear, u32 set,
 	xrx200_pmac_w32(priv, val, offset);
 }
 
+static void xrx200_flush_dma(struct xrx200_chan *ch)
+{
+	int i;
+
+	udelay(10);
+	for (i = 0; i < LTQ_DESC_NUM; i++) {
+		struct ltq_dma_desc *desc = &ch->dma.desc_base[ch->dma.desc];
+
+		if ((desc->ctl & (LTQ_DMA_OWN | LTQ_DMA_C)) != LTQ_DMA_C)
+			break;
+
+		desc->ctl = LTQ_DMA_OWN | LTQ_DMA_RX_OFFSET(NET_IP_ALIGN) | XRX200_DMA_DATA_LEN;
+		ch->dma.desc++;
+		ch->dma.desc %= LTQ_DESC_NUM;
+	}
+}
+
 static int xrx200_open(struct net_device *dev)
 {
 	struct xrx200_priv *priv = netdev_priv(dev);
 
 	spin_lock_bh(&priv->chan_tx.lock);
 	ltq_dma_open(&priv->chan_tx.dma);
+	ltq_dma_enable_irq(&priv->chan_tx.dma);
 	spin_unlock_bh(&priv->chan_tx.lock);
 
 	spin_lock_bh(&priv->chan_rx.lock);
 	napi_enable(&priv->chan_rx.napi);
 	ltq_dma_open(&priv->chan_rx.dma);
+	xrx200_flush_dma(&priv->chan_rx);
+	ltq_dma_enable_irq(&priv->chan_rx.dma);
 	spin_unlock_bh(&priv->chan_rx.lock);
 
 	netif_wake_queue(dev);
@@ -232,7 +252,7 @@ static int xrx200_poll_rx(struct napi_struct *napi, int budget)
 static void xrx200_tx_housekeeping(unsigned long ptr)
 {
 	struct xrx200_chan *ch = (struct xrx200_chan *) ptr;
-	int pkts, bytes = 0;
+	int pkts = 0, bytes = 0;
 
 	spin_lock_bh(&ch->lock);
 	ltq_dma_ack_irq(&ch->dma);
