@@ -99,7 +99,8 @@ static void xrx200_pmac_w32(struct xrx200_priv *priv, u32 val, u32 offset)
 	return __raw_writel(val, priv->pmac_reg + offset);
 }
 
-static void xrx200_pmac_mask(struct xrx200_priv *priv, u32 clear, u32 set, u32 offset)
+static void xrx200_pmac_mask(struct xrx200_priv *priv, u32 clear, u32 set,
+			     u32 offset)
 {
 	u32 val = xrx200_pmac_r32(priv, offset);
 
@@ -119,7 +120,8 @@ static void xrx200_flush_dma(struct xrx200_chan *ch)
 		if ((desc->ctl & (LTQ_DMA_OWN | LTQ_DMA_C)) != LTQ_DMA_C)
 			break;
 
-		desc->ctl = LTQ_DMA_OWN | LTQ_DMA_RX_OFFSET(NET_IP_ALIGN) | XRX200_DMA_DATA_LEN;
+		desc->ctl = LTQ_DMA_OWN | LTQ_DMA_RX_OFFSET(NET_IP_ALIGN) |
+			    XRX200_DMA_DATA_LEN;
 		ch->dma.desc++;
 		ch->dma.desc %= LTQ_DESC_NUM;
 	}
@@ -178,7 +180,8 @@ static int xrx200_alloc_skb(struct xrx200_chan *ch)
 	ch->dma.desc_base[ch->dma.desc].addr = dma_map_single(ch->priv->dev,
 		ch->skb[ch->dma.desc]->data, XRX200_DMA_DATA_LEN,
 			DMA_FROM_DEVICE);
-	if (unlikely(dma_mapping_error(ch->priv->dev, ch->dma.desc_base[ch->dma.desc].addr))) {
+	if (unlikely(dma_mapping_error(ch->priv->dev,
+				       ch->dma.desc_base[ch->dma.desc].addr))) {
 		dev_kfree_skb_any(ch->skb[ch->dma.desc]);
 		ret = -ENOMEM;
 		goto skip;
@@ -259,7 +262,8 @@ static void xrx200_tx_housekeeping(unsigned long ptr)
 	int bytes = 0;
 
 	ltq_dma_ack_irq(&ch->dma);
-	while ((ch->dma.desc_base[ch->tx_free].ctl & (LTQ_DMA_OWN | LTQ_DMA_C)) == LTQ_DMA_C) {
+	while ((ch->dma.desc_base[ch->tx_free].ctl &
+		(LTQ_DMA_OWN | LTQ_DMA_C)) == LTQ_DMA_C) {
 		struct sk_buff *skb = ch->skb[ch->tx_free];
 
 		pkts++;
@@ -392,15 +396,18 @@ static int xrx200_dma_init(struct xrx200_priv *priv)
 	ch_rx->priv = priv;
 
 	ltq_dma_alloc_rx(&ch_rx->dma);
-	for (ch_rx->dma.desc = 0; ch_rx->dma.desc < LTQ_DESC_NUM; ch_rx->dma.desc++) {
+	for (ch_rx->dma.desc = 0; ch_rx->dma.desc < LTQ_DESC_NUM;
+	     ch_rx->dma.desc++) {
 		ret = xrx200_alloc_skb(ch_rx);
 		if (ret)
 			goto rx_free;
 	}
 	ch_rx->dma.desc = 0;
-	ret = devm_request_irq(priv->dev, ch_rx->dma.irq, xrx200_dma_irq_rx, 0, "vrx200_rx", priv);
+	ret = devm_request_irq(priv->dev, ch_rx->dma.irq, xrx200_dma_irq_rx, 0,
+			       "vrx200_rx", priv);
 	if (ret) {
-		pr_err("net-xrx200: failed to request irq %d\n", ch_rx->dma.irq);
+		dev_err(priv->dev,"net-xrx200: failed to request irq %d\n",
+			ch_rx->dma.irq);
 		goto rx_ring_free;
 	}
 
@@ -408,9 +415,11 @@ static int xrx200_dma_init(struct xrx200_priv *priv)
 	ch_tx->priv = priv;
 
 	ltq_dma_alloc_tx(&ch_tx->dma);
-	ret = devm_request_irq(priv->dev, ch_tx->dma.irq, xrx200_dma_irq_tx, 0, "vrx200_tx", priv);
+	ret = devm_request_irq(priv->dev, ch_tx->dma.irq, xrx200_dma_irq_tx, 0,
+			       "vrx200_tx", priv);
 	if (ret) {
-		pr_err("net-xrx200: failed to request irq %d\n", ch_tx->dma.irq);
+		dev_err(priv->dev, "net-xrx200: failed to request irq %d\n",
+			ch_tx->dma.irq);
 		goto tx_free;
 	}
 
@@ -472,25 +481,25 @@ static int xrx200_probe(struct platform_device *pdev)
 	/* load the memory ranges */
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	if (!res) {
-		dev_err(&pdev->dev, "failed to get resources\n");
+		dev_err(dev, "failed to get resources\n");
 		return -ENOENT;
 	}
 
-	priv->pmac_reg = devm_ioremap_resource(&pdev->dev, res);
+	priv->pmac_reg = devm_ioremap_resource(dev, res);
 	if (!priv->pmac_reg) {
-		dev_err(&pdev->dev, "failed to request and remap io ranges \n");
+		dev_err(dev, "failed to request and remap io ranges \n");
 		return -ENOMEM;
 	}
 
 	priv->chan_rx.dma.irq = platform_get_irq_byname(pdev, "rx");
 	if (priv->chan_rx.dma.irq < 0) {
-		dev_err(&pdev->dev, "failed to get RX IRQ, %i\n",
+		dev_err(dev, "failed to get RX IRQ, %i\n",
 			priv->chan_rx.dma.irq);
 		return -ENOENT;
 	}
 	priv->chan_tx.dma.irq = platform_get_irq_byname(pdev, "tx");
 	if (priv->chan_tx.dma.irq < 0) {
-		dev_err(&pdev->dev, "failed to get TX IRQ, %i\n",
+		dev_err(dev, "failed to get TX IRQ, %i\n",
 			priv->chan_tx.dma.irq);
 		return -ENOENT;
 	}
@@ -510,7 +519,7 @@ static int xrx200_probe(struct platform_device *pdev)
 	}
 
 	/* get the clock */
-	priv->clk = devm_clk_get(&pdev->dev, NULL);
+	priv->clk = devm_clk_get(dev, NULL);
 	if (IS_ERR(priv->clk)) {
 		dev_err(dev, "failed to get clock\n");
 		return PTR_ERR(priv->clk);
@@ -537,10 +546,12 @@ static int xrx200_probe(struct platform_device *pdev)
 
 	/* enable status header, enable CRC */
 	xrx200_pmac_mask(priv, 0,
-		PMAC_HD_CTL_RST | PMAC_HD_CTL_AST | PMAC_HD_CTL_RXSH | PMAC_HD_CTL_AS | PMAC_HD_CTL_AC | PMAC_HD_CTL_RC,
-		PMAC_HD_CTL);
+			 PMAC_HD_CTL_RST | PMAC_HD_CTL_AST | PMAC_HD_CTL_RXSH |
+			 PMAC_HD_CTL_AS | PMAC_HD_CTL_AC | PMAC_HD_CTL_RC,
+			 PMAC_HD_CTL);
 
-	tasklet_init(&priv->chan_tx.tasklet, xrx200_tx_housekeeping, (u32) &priv->chan_tx);
+	tasklet_init(&priv->chan_tx.tasklet, xrx200_tx_housekeeping,
+		     (u32) &priv->chan_tx);
 
 	/* setup NAPI */
 	netif_napi_add(net_dev, &priv->chan_rx.napi, xrx200_poll_rx, 32);
