@@ -8,8 +8,6 @@
  *  Based on EP93xx wdt driver
  */
 
-#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
-
 #include <linux/module.h>
 #include <linux/fs.h>
 #include <linux/miscdevice.h>
@@ -52,155 +50,99 @@
 #define LTQ_WDT_SR		0x8	/* watchdog status register */
 #define  LTQ_WDT_SR_VALUE_MASK	GENMASK(15, 0)	/* Timer value */
 
-#define LTQ_WDT_DIVIDER		0x40000
+#define LTQ_WDT_DIVIDER		0x40000ll
 #define LTQ_MAX_TIMEOUT		((1 << 16) - 1)	/* the reload field is 16 bit */
 
 static bool nowayout = WATCHDOG_NOWAYOUT;
 
-static void __iomem *ltq_wdt_membase;
-static unsigned long ltq_io_region_clk_rate;
+struct ltq_wdt_priv {
+	struct watchdog_device wdt;
+	void __iomem *membase;
+	unsigned long clk_rate;
+};
 
-static unsigned long ltq_wdt_bootstatus;
-static unsigned long ltq_wdt_in_use;
-static int ltq_wdt_timeout = 30;
-static int ltq_wdt_ok_to_close;
-
-static void
-ltq_wdt_enable(void)
+static u32 ltq_wdt_r32(struct ltq_wdt_priv *priv, u32 offset)
 {
-	unsigned long int timeout = ltq_wdt_timeout *
-			(ltq_io_region_clk_rate / LTQ_WDT_DIVIDER) + 0x1000;
-	if (timeout > LTQ_MAX_TIMEOUT)
-		timeout = LTQ_MAX_TIMEOUT;
-
-	/* write the first password magic */
-	ltq_w32(LTQ_WDT_CR_PW1, ltq_wdt_membase + LTQ_WDT_CR);
-	/* write the second magic plus the configuration and new timeout */
-	ltq_w32(LTQ_WDT_CR_GEN | LTQ_WDT_CR_PWL | LTQ_WDT_CR_CLKDIV |
-		LTQ_WDT_CR_PW2 | timeout, ltq_wdt_membase + LTQ_WDT_CR);
+	return __raw_readl(priv->membase + offset);
 }
 
-static void
-ltq_wdt_disable(void)
+static void ltq_wdt_w32(struct ltq_wdt_priv *priv, u32 val, u32 offset)
 {
-	/* write the first password magic */
-	ltq_w32(LTQ_WDT_CR_PW1, ltq_wdt_membase + LTQ_WDT_CR);
-	/*
-	 * write the second password magic with no config
-	 * this turns the watchdog off
-	 */
-	ltq_w32(LTQ_WDT_CR_PW2, ltq_wdt_membase + LTQ_WDT_CR);
+	return __raw_writel(val, priv->membase + offset);
 }
 
-static ssize_t
-ltq_wdt_write(struct file *file, const char __user *data,
-		size_t len, loff_t *ppos)
+static void ltq_wdt_mask(struct ltq_wdt_priv *priv, u32 clear, u32 set,
+			 u32 offset)
 {
-	if (len) {
-		if (!nowayout) {
-			size_t i;
+	u32 val = ltq_wdt_r32(priv, offset);
 
-			ltq_wdt_ok_to_close = 0;
-			for (i = 0; i != len; i++) {
-				char c;
-
-				if (get_user(c, data + i))
-					return -EFAULT;
-				if (c == 'V')
-					ltq_wdt_ok_to_close = 1;
-				else
-					ltq_wdt_ok_to_close = 0;
-			}
-		}
-		ltq_wdt_enable();
-	}
-
-	return len;
+	val &= ~(clear);
+	val |= set;
+	ltq_wdt_w32(priv, val, offset);
 }
 
-static struct watchdog_info ident = {
+static struct ltq_wdt_priv *ltq_wdt_get_priv(struct watchdog_device *wdt)
+{
+	return container_of(wdt, struct ltq_wdt_priv, wdt);
+}
+
+static struct watchdog_info ltq_wdt_info = {
 	.options = WDIOF_MAGICCLOSE | WDIOF_SETTIMEOUT | WDIOF_KEEPALIVEPING |
-			WDIOF_CARDRESET,
+		   WDIOF_CARDRESET,
 	.identity = "ltq_wdt",
 };
 
-static long
-ltq_wdt_ioctl(struct file *file,
-		unsigned int cmd, unsigned long arg)
+static int ltq_wdt_start(struct watchdog_device *wdt)
 {
-	int ret = -ENOTTY;
+	struct ltq_wdt_priv *priv = ltq_wdt_get_priv(wdt);
+	u32 timeout;
 
-	switch (cmd) {
-	case WDIOC_GETSUPPORT:
-		ret = copy_to_user((struct watchdog_info __user *)arg, &ident,
-				sizeof(ident)) ? -EFAULT : 0;
-		break;
+	timeout = wdt->timeout * (priv->clk_rate / LTQ_WDT_DIVIDER);
 
-	case WDIOC_GETBOOTSTATUS:
-		ret = put_user(ltq_wdt_bootstatus, (int __user *)arg);
-		break;
-
-	case WDIOC_GETSTATUS:
-		ret = put_user(0, (int __user *)arg);
-		break;
-
-	case WDIOC_SETTIMEOUT:
-		ret = get_user(ltq_wdt_timeout, (int __user *)arg);
-		if (!ret)
-			ltq_wdt_enable();
-		/* intentional drop through */
-	case WDIOC_GETTIMEOUT:
-		ret = put_user(ltq_wdt_timeout, (int __user *)arg);
-		break;
-
-	case WDIOC_KEEPALIVE:
-		ltq_wdt_enable();
-		ret = 0;
-		break;
-	}
-	return ret;
-}
-
-static int
-ltq_wdt_open(struct inode *inode, struct file *file)
-{
-	if (test_and_set_bit(0, &ltq_wdt_in_use))
-		return -EBUSY;
-	ltq_wdt_in_use = 1;
-	ltq_wdt_enable();
-
-	return nonseekable_open(inode, file);
-}
-
-static int
-ltq_wdt_release(struct inode *inode, struct file *file)
-{
-	if (ltq_wdt_ok_to_close)
-		ltq_wdt_disable();
-	else
-		pr_err("watchdog closed without warning\n");
-	ltq_wdt_ok_to_close = 0;
-	clear_bit(0, &ltq_wdt_in_use);
+	ltq_wdt_mask(priv, LTQ_WDT_CR_PW_MASK, LTQ_WDT_CR_PW1, LTQ_WDT_CR);
+	/* write the second magic plus the configuration and new timeout */
+	ltq_wdt_mask(priv, LTQ_WDT_CR_PW_MASK | LTQ_WDT_CR_RELOAD_MASK,
+		     LTQ_WDT_CR_GEN | LTQ_WDT_CR_PWL | LTQ_WDT_CR_CLKDIV |
+		     LTQ_WDT_CR_PW2 | timeout,
+		     LTQ_WDT_CR);
 
 	return 0;
 }
 
-static const struct file_operations ltq_wdt_fops = {
+static int ltq_wdt_stop(struct watchdog_device *wdt)
+{
+	struct ltq_wdt_priv *priv = ltq_wdt_get_priv(wdt);
+
+	ltq_wdt_mask(priv, LTQ_WDT_CR_PW_MASK, LTQ_WDT_CR_PW1, LTQ_WDT_CR);
+	ltq_wdt_mask(priv, LTQ_WDT_CR_GEN | LTQ_WDT_CR_PW_MASK,
+		     LTQ_WDT_CR_PW2, LTQ_WDT_CR);
+
+	return 0;
+}
+
+static int ltq_wdt_ping(struct watchdog_device *wdt)
+{
+	struct ltq_wdt_priv *priv = ltq_wdt_get_priv(wdt);
+	u32 timeout;
+
+	timeout = wdt->timeout * (priv->clk_rate / LTQ_WDT_DIVIDER);
+
+	ltq_wdt_mask(priv, LTQ_WDT_CR_PW_MASK, LTQ_WDT_CR_PW1, LTQ_WDT_CR);
+	/* write the second magic plus the configuration and new timeout */
+	ltq_wdt_mask(priv, LTQ_WDT_CR_PW_MASK | LTQ_WDT_CR_RELOAD_MASK,
+		     LTQ_WDT_CR_PW2 | timeout, LTQ_WDT_CR);
+
+	return 0;
+}
+
+static const struct watchdog_ops ltq_wdt_ops = {
 	.owner		= THIS_MODULE,
-	.write		= ltq_wdt_write,
-	.unlocked_ioctl	= ltq_wdt_ioctl,
-	.open		= ltq_wdt_open,
-	.release	= ltq_wdt_release,
-	.llseek		= no_llseek,
+	.start		= ltq_wdt_start,
+	.stop		= ltq_wdt_stop,
+	.ping		= ltq_wdt_ping,
 };
 
-static struct miscdevice ltq_wdt_miscdev = {
-	.minor	= WATCHDOG_MINOR,
-	.name	= "watchdog",
-	.fops	= &ltq_wdt_fops,
-};
-
-typedef int (*ltq_wdt_bootstatus_set)(struct platform_device *pdev);
+typedef int (*ltq_wdt_bootstatus_get)(struct platform_device *pdev);
 
 static int ltq_wdt_bootstatus_xrx(struct platform_device *pdev)
 {
@@ -218,7 +160,7 @@ static int ltq_wdt_bootstatus_xrx(struct platform_device *pdev)
 		return err;
 
 	if (val & LTQ_XRX_RCU_RST_STAT_WDT)
-		ltq_wdt_bootstatus = WDIOF_CARDRESET;
+		return WDIOF_CARDRESET;
 
 	return 0;
 }
@@ -240,29 +182,31 @@ static int ltq_wdt_bootstatus_falcon(struct platform_device *pdev)
 		return err;
 
 	if ((val & LTQ_FALCON_SYS1_CPU0RS_MASK) == LTQ_FALCON_SYS1_CPU0RS_WDT)
-		ltq_wdt_bootstatus = WDIOF_CARDRESET;
+		return WDIOF_CARDRESET;
 
 	return 0;
 }
 
-static int
-ltq_wdt_probe(struct platform_device *pdev)
+static int ltq_wdt_probe(struct platform_device *pdev)
 {
-	struct resource *res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+	u64 max_clocks = LTQ_MAX_TIMEOUT * LTQ_WDT_DIVIDER;
+	struct ltq_wdt_priv *priv;
+	struct watchdog_device *wdt;
+	struct resource *res;
 	struct clk *clk;
-	ltq_wdt_bootstatus_set ltq_wdt_bootstatus_set;
+	ltq_wdt_bootstatus_get ltq_wdt_bootstatus_get;
 	int ret;
 
-	ltq_wdt_membase = devm_ioremap_resource(&pdev->dev, res);
-	if (IS_ERR(ltq_wdt_membase))
-		return PTR_ERR(ltq_wdt_membase);
+	priv = devm_kzalloc(&pdev->dev, sizeof(*priv), GFP_KERNEL);
+	if (!priv)
+		return -ENOMEM;
 
-	ltq_wdt_bootstatus_set = of_device_get_match_data(&pdev->dev);
-	if (ltq_wdt_bootstatus_set) {
-		ret = ltq_wdt_bootstatus_set(pdev);
-		if (ret)
-			return ret;
-	}
+	wdt = &priv->wdt;
+
+	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+	priv->membase = devm_ioremap_resource(&pdev->dev, res);
+	if (IS_ERR(priv->membase))
+		return PTR_ERR(priv->membase);
 
 	/* we do not need to enable the clock as it is always running */
 	clk = clk_get_io();
@@ -270,17 +214,42 @@ ltq_wdt_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "Failed to get clock\n");
 		return -ENOENT;
 	}
-	ltq_io_region_clk_rate = clk_get_rate(clk);
+	priv->clk_rate = clk_get_rate(clk);
 	clk_put(clk);
 
-	dev_info(&pdev->dev, "Init done\n");
-	return misc_register(&ltq_wdt_miscdev);
+	wdt->info		= &ltq_wdt_info;
+	wdt->ops		= &ltq_wdt_ops;
+	wdt->status		= 0;
+	wdt->min_timeout	= 1;
+	wdt->max_timeout	= div_u64(max_clocks, priv->clk_rate);
+	wdt->timeout		= wdt->max_timeout;
+	wdt->parent		= &pdev->dev;
+
+	ltq_wdt_bootstatus_get = of_device_get_match_data(&pdev->dev);
+	if (ltq_wdt_bootstatus_get) {
+		ret = ltq_wdt_bootstatus_get(pdev);
+		if (ret < 0)
+			return ret;
+		wdt->bootstatus = ret;
+	}
+
+	watchdog_set_nowayout(wdt, nowayout);
+	platform_set_drvdata(pdev, priv);
+
+	ltq_wdt_stop(wdt);
+
+	ret = watchdog_register_device(wdt);
+	if (ret)
+		return ret;
+
+	return 0;
 }
 
-static int
-ltq_wdt_remove(struct platform_device *pdev)
+static int ltq_wdt_remove(struct platform_device *pdev)
 {
-	misc_deregister(&ltq_wdt_miscdev);
+	struct ltq_wdt_priv *priv = platform_get_drvdata(pdev);
+
+	watchdog_unregister_device(&priv->wdt);
 
 	return 0;
 }
