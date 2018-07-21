@@ -15,10 +15,10 @@
  *   Copyright (C) 2010 Lantiq Deutschland GmbH
  *   Copyright (C) 2012 John Crispin <blogic@openwrt.org>
  *
- *   PCE microcode extracted from UGW5.2 switch api
+ *   PCE microcode extracted from UGW7.1.1 switch api
  */
 
-/* Switch API Micro Code V0.3 */
+/* GSWIP_2.X*/
 enum {
 	OUT_MAC0 = 0,
 	OUT_MAC1,
@@ -60,7 +60,7 @@ enum {
 	OUT_IGMP0,
 	OUT_IGMP1,
 	OUT_IPOFF,	/*39*/
-	OUT_NONE =  63
+	OUT_NONE = 63,
 };
 
 /* parser's microcode length type */
@@ -70,7 +70,7 @@ enum {
 
 /* parser's microcode flag type */
 enum {
-	FLAG_ITAG =  0,
+	FLAG_ITAG = 0,
 	FLAG_VLAN,
 	FLAG_SNAP,
 	FLAG_PPPOE,
@@ -86,15 +86,17 @@ enum {
 	FLAG_NO,	/*13*/
 };
 
-/* Micro code version V2_11 (extension for parsing IPv6 in PPPoE) */
+struct gswip_pce_microcode {
+	u16 val_3;
+	u16 val_2;
+	u16 val_1;
+	u16 val_0;
+};
+
 #define MC_ENTRY(val, msk, ns, out, len, type, flags, ipv4_len) \
-	{ {val, msk, (ns<<10 | out<<4 | len>>1), (len&1)<<15 | type<<13 | flags<<9 | ipv4_len<<8 }}
-struct pce_microcode {
-	unsigned short val[4];
-/*	unsigned short val_2;
-	unsigned short val_1;
-	unsigned short val_0;*/
-} pce_microcode[] = {
+	{ val, msk, (ns<<10 | out<<4 | len>>1),\
+		(len&1)<<15 | type<<13 | flags<<9 | ipv4_len<<8 }
+static const struct gswip_pce_microcode gswip_pce_microcode[] = {
 	/*      value    mask    ns  fields      L  type     flags       ipv4_len */
 	MC_ENTRY(0x88c3, 0xFFFF,  1, OUT_ITAG0,  4, INSTR,   FLAG_ITAG,  0),
 	MC_ENTRY(0x8100, 0xFFFF,  2, OUT_VTAG0,  2, INSTR,   FLAG_VLAN,  0),
@@ -105,59 +107,59 @@ struct pce_microcode {
 	MC_ENTRY(0x86DD, 0xFFFF, 22, OUT_ETHTYP, 1, INSTR,   FLAG_NO,    0),
 	MC_ENTRY(0x8863, 0xFFFF, 16, OUT_ETHTYP, 1, INSTR,   FLAG_NO,    0),
 	MC_ENTRY(0x0000, 0xF800, 10, OUT_NONE,   0, INSTR,   FLAG_NO,    0),
-	MC_ENTRY(0x0000, 0x0000, 38, OUT_ETHTYP, 1, INSTR,   FLAG_NO,    0),
-	MC_ENTRY(0x0600, 0x0600, 38, OUT_ETHTYP, 1, INSTR,   FLAG_NO,    0),
+	MC_ENTRY(0x0000, 0x0000, 40, OUT_ETHTYP, 1, INSTR,   FLAG_NO,    0),
+	MC_ENTRY(0x0600, 0x0600, 40, OUT_ETHTYP, 1, INSTR,   FLAG_NO,    0),
 	MC_ENTRY(0x0000, 0x0000, 12, OUT_NONE,   1, INSTR,   FLAG_NO,    0),
 	MC_ENTRY(0xAAAA, 0xFFFF, 14, OUT_NONE,   1, INSTR,   FLAG_NO,    0),
-	MC_ENTRY(0x0000, 0x0000, 39, OUT_NONE,   0, INSTR,   FLAG_NO,    0),
-	MC_ENTRY(0x0300, 0xFF00, 39, OUT_NONE,   0, INSTR,   FLAG_SNAP,  0),
-	MC_ENTRY(0x0000, 0x0000, 39, OUT_NONE,   0, INSTR,   FLAG_NO,    0),
-	MC_ENTRY(0x0000, 0x0000, 39, OUT_DIP7,   3, INSTR,   FLAG_NO,    0),
+	MC_ENTRY(0x0000, 0x0000, 41, OUT_NONE,   0, INSTR,   FLAG_NO,    0),
+	MC_ENTRY(0x0300, 0xFF00, 41, OUT_NONE,   0, INSTR,   FLAG_SNAP,  0),
+	MC_ENTRY(0x0000, 0x0000, 41, OUT_NONE,   0, INSTR,   FLAG_NO,    0),
+	MC_ENTRY(0x0000, 0x0000, 41, OUT_DIP7,   3, INSTR,   FLAG_NO,    0),
 	MC_ENTRY(0x0000, 0x0000, 18, OUT_DIP7,   3, INSTR,   FLAG_PPPOE, 0),
 	MC_ENTRY(0x0021, 0xFFFF, 21, OUT_NONE,   1, INSTR,   FLAG_NO,    0),
 	MC_ENTRY(0x0057, 0xFFFF, 22, OUT_NONE,   1, INSTR,   FLAG_NO,    0),
-	MC_ENTRY(0x0000, 0x0000, 39, OUT_NONE,   0, INSTR,   FLAG_NO,    0),
+	MC_ENTRY(0x0000, 0x0000, 40, OUT_NONE,   0, INSTR,   FLAG_NO,    0),
 	MC_ENTRY(0x4000, 0xF000, 24, OUT_IP0,    4, INSTR,   FLAG_IPV4,  1),
 	MC_ENTRY(0x6000, 0xF000, 27, OUT_IP0,    3, INSTR,   FLAG_IPV6,  0),
-	MC_ENTRY(0x0000, 0x0000, 39, OUT_NONE,   0, INSTR,   FLAG_NO,    0),
+	MC_ENTRY(0x0000, 0x0000, 41, OUT_NONE,   0, INSTR,   FLAG_NO,    0),
 	MC_ENTRY(0x0000, 0x0000, 25, OUT_IP3,    2, INSTR,   FLAG_NO,    0),
 	MC_ENTRY(0x0000, 0x0000, 26, OUT_SIP0,   4, INSTR,   FLAG_NO,    0),
-	MC_ENTRY(0x0000, 0x0000, 38, OUT_NONE,   0, LENACCU, FLAG_NO,    0),
-	MC_ENTRY(0x1100, 0xFF00, 37, OUT_PROT,   1, INSTR,   FLAG_NO,    0),
-	MC_ENTRY(0x0600, 0xFF00, 37, OUT_PROT,   1, INSTR,   FLAG_NO,    0),
+	MC_ENTRY(0x0000, 0x0000, 40, OUT_NONE,   0, LENACCU, FLAG_NO,    0),
+	MC_ENTRY(0x1100, 0xFF00, 39, OUT_PROT,   1, INSTR,   FLAG_NO,    0),
+	MC_ENTRY(0x0600, 0xFF00, 39, OUT_PROT,   1, INSTR,   FLAG_NO,    0),
 	MC_ENTRY(0x0000, 0xFF00, 33, OUT_IP3,   17, INSTR,   FLAG_HOP,   0),
 	MC_ENTRY(0x2B00, 0xFF00, 33, OUT_IP3,   17, INSTR,   FLAG_NN1,   0),
 	MC_ENTRY(0x3C00, 0xFF00, 33, OUT_IP3,   17, INSTR,   FLAG_NN2,   0),
-	MC_ENTRY(0x0000, 0x0000, 37, OUT_PROT,   1, INSTR,   FLAG_NO,    0),
+	MC_ENTRY(0x0000, 0x0000, 39, OUT_PROT,   1, INSTR,   FLAG_NO,    0),
+	MC_ENTRY(0x0000, 0x00E0, 35, OUT_NONE,   0, INSTR,   FLAG_NO,    0),
+	MC_ENTRY(0x0000, 0x0000, 40, OUT_NONE,   0, INSTR,   FLAG_NO,    0),
 	MC_ENTRY(0x0000, 0xFF00, 33, OUT_NONE,   0, IPV6,    FLAG_HOP,   0),
 	MC_ENTRY(0x2B00, 0xFF00, 33, OUT_NONE,   0, IPV6,    FLAG_NN1,   0),
 	MC_ENTRY(0x3C00, 0xFF00, 33, OUT_NONE,   0, IPV6,    FLAG_NN2,   0),
-	MC_ENTRY(0x0000, 0x0000, 38, OUT_PROT,   1, IPV6,    FLAG_NO,    0),
-	MC_ENTRY(0x0000, 0x0000, 38, OUT_SIP0,  16, INSTR,   FLAG_NO,    0),
-	MC_ENTRY(0x0000, 0x0000, 39, OUT_APP0,   4, INSTR,   FLAG_IGMP,  0),
-	MC_ENTRY(0x0000, 0x0000, 39, OUT_NONE,   0, INSTR,   FLAG_END,   0),
-	MC_ENTRY(0x0000, 0x0000, 39, OUT_NONE,   0, INSTR,   FLAG_END,   0),
-	MC_ENTRY(0x0000, 0x0000, 39, OUT_NONE,   0, INSTR,   FLAG_END,   0),
-	MC_ENTRY(0x0000, 0x0000, 39, OUT_NONE,   0, INSTR,   FLAG_END,   0),
-	MC_ENTRY(0x0000, 0x0000, 39, OUT_NONE,   0, INSTR,   FLAG_END,   0),
-	MC_ENTRY(0x0000, 0x0000, 39, OUT_NONE,   0, INSTR,   FLAG_END,   0),
-	MC_ENTRY(0x0000, 0x0000, 39, OUT_NONE,   0, INSTR,   FLAG_END,   0),
-	MC_ENTRY(0x0000, 0x0000, 39, OUT_NONE,   0, INSTR,   FLAG_END,   0),
-	MC_ENTRY(0x0000, 0x0000, 39, OUT_NONE,   0, INSTR,   FLAG_END,   0),
-	MC_ENTRY(0x0000, 0x0000, 39, OUT_NONE,   0, INSTR,   FLAG_END,   0),
-	MC_ENTRY(0x0000, 0x0000, 39, OUT_NONE,   0, INSTR,   FLAG_END,   0),
-	MC_ENTRY(0x0000, 0x0000, 39, OUT_NONE,   0, INSTR,   FLAG_END,   0),
-	MC_ENTRY(0x0000, 0x0000, 39, OUT_NONE,   0, INSTR,   FLAG_END,   0),
-	MC_ENTRY(0x0000, 0x0000, 39, OUT_NONE,   0, INSTR,   FLAG_END,   0),
-	MC_ENTRY(0x0000, 0x0000, 39, OUT_NONE,   0, INSTR,   FLAG_END,   0),
-	MC_ENTRY(0x0000, 0x0000, 39, OUT_NONE,   0, INSTR,   FLAG_END,   0),
-	MC_ENTRY(0x0000, 0x0000, 39, OUT_NONE,   0, INSTR,   FLAG_END,   0),
-	MC_ENTRY(0x0000, 0x0000, 39, OUT_NONE,   0, INSTR,   FLAG_END,   0),
-	MC_ENTRY(0x0000, 0x0000, 39, OUT_NONE,   0, INSTR,   FLAG_END,   0),
-	MC_ENTRY(0x0000, 0x0000, 39, OUT_NONE,   0, INSTR,   FLAG_END,   0),
-	MC_ENTRY(0x0000, 0x0000, 39, OUT_NONE,   0, INSTR,   FLAG_END,   0),
-	MC_ENTRY(0x0000, 0x0000, 39, OUT_NONE,   0, INSTR,   FLAG_END,   0),
-	MC_ENTRY(0x0000, 0x0000, 39, OUT_NONE,   0, INSTR,   FLAG_END,   0),
-	MC_ENTRY(0x0000, 0x0000, 39, OUT_NONE,   0, INSTR,   FLAG_END,   0),
-	MC_ENTRY(0x0000, 0x0000, 39, OUT_NONE,   0, INSTR,   FLAG_END,   0),
+	MC_ENTRY(0x0000, 0x0000, 40, OUT_PROT,   1, IPV6,    FLAG_NO,    0),
+	MC_ENTRY(0x0000, 0x0000, 40, OUT_SIP0,  16, INSTR,   FLAG_NO,    0),
+	MC_ENTRY(0x0000, 0x0000, 41, OUT_APP0,   4, INSTR,   FLAG_IGMP,  0),
+	MC_ENTRY(0x0000, 0x0000, 41, OUT_NONE,   0, INSTR,   FLAG_END,   0),
+	MC_ENTRY(0x0000, 0x0000, 41, OUT_NONE,   0, INSTR,   FLAG_END,   0),
+	MC_ENTRY(0x0000, 0x0000, 41, OUT_NONE,   0, INSTR,   FLAG_END,   0),
+	MC_ENTRY(0x0000, 0x0000, 41, OUT_NONE,   0, INSTR,   FLAG_END,   0),
+	MC_ENTRY(0x0000, 0x0000, 41, OUT_NONE,   0, INSTR,   FLAG_END,   0),
+	MC_ENTRY(0x0000, 0x0000, 41, OUT_NONE,   0, INSTR,   FLAG_END,   0),
+	MC_ENTRY(0x0000, 0x0000, 41, OUT_NONE,   0, INSTR,   FLAG_END,   0),
+	MC_ENTRY(0x0000, 0x0000, 41, OUT_NONE,   0, INSTR,   FLAG_END,   0),
+	MC_ENTRY(0x0000, 0x0000, 41, OUT_NONE,   0, INSTR,   FLAG_END,   0),
+	MC_ENTRY(0x0000, 0x0000, 41, OUT_NONE,   0, INSTR,   FLAG_END,   0),
+	MC_ENTRY(0x0000, 0x0000, 41, OUT_NONE,   0, INSTR,   FLAG_END,   0),
+	MC_ENTRY(0x0000, 0x0000, 41, OUT_NONE,   0, INSTR,   FLAG_END,   0),
+	MC_ENTRY(0x0000, 0x0000, 41, OUT_NONE,   0, INSTR,   FLAG_END,   0),
+	MC_ENTRY(0x0000, 0x0000, 41, OUT_NONE,   0, INSTR,   FLAG_END,   0),
+	MC_ENTRY(0x0000, 0x0000, 41, OUT_NONE,   0, INSTR,   FLAG_END,   0),
+	MC_ENTRY(0x0000, 0x0000, 41, OUT_NONE,   0, INSTR,   FLAG_END,   0),
+	MC_ENTRY(0x0000, 0x0000, 41, OUT_NONE,   0, INSTR,   FLAG_END,   0),
+	MC_ENTRY(0x0000, 0x0000, 41, OUT_NONE,   0, INSTR,   FLAG_END,   0),
+	MC_ENTRY(0x0000, 0x0000, 41, OUT_NONE,   0, INSTR,   FLAG_END,   0),
+	MC_ENTRY(0x0000, 0x0000, 41, OUT_NONE,   0, INSTR,   FLAG_END,   0),
+	MC_ENTRY(0x0000, 0x0000, 41, OUT_NONE,   0, INSTR,   FLAG_END,   0),
+	MC_ENTRY(0x0000, 0x0000, 41, OUT_NONE,   0, INSTR,   FLAG_END,   0),
+	MC_ENTRY(0x0000, 0x0000, 41, OUT_NONE,   0, INSTR,   FLAG_END,   0),
 };
