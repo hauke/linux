@@ -36,51 +36,49 @@
 #define XRX200_PCE_ACTVLAN_IDX	0x01
 #define XRX200_PCE_VLANMAP_IDX	0x02
 
-/* fetch / store dma */
-
 /* MDIO */
-#define MDIO_GLOB		0x0000
-#define MDIO_CTRL		0x0020
-#define MDIO_READ		0x0024
-#define MDIO_WRITE		0x0028
-#define MDIO_PHY0		0x0054
-#define MDIO_PHY(x)		(0x0054 - (x * sizeof(unsigned)))
-#define MDIO_CLK_CFG0		0x002C
-#define MDIO_CLK_CFG1		0x0030
+#define GSWIP_MDIO_GLOB			0x0000
+#define  GSWIP_MDIO_GLOB_ENABLE		BIT(15)
+#define GSWIP_MDIO_CTRL			0x0020
+#define  GSWIP_MDIO_CTRL_BUSY		BIT(12)
+#define  GSWIP_MDIO_CTRL_RD		BIT(11)
+#define  GSWIP_MDIO_CTRL_WR		BIT(10)
+#define  GSWIP_MDIO_CTRL_PHYAD_MASK	0x1f
+#define  GSWIP_MDIO_CTRL_PHYAD_SHIFT	5
+#define  GSWIP_MDIO_CTRL_REGAD_MASK	0x1f
+#define GSWIP_MDIO_READ			0x0024
+#define GSWIP_MDIO_WRITE		0x0028
+#define GSWIP_MDIO_PHY(x)		(0x0054 - (x * 4))
+#define  GSWIP_MDIO_PHY_LINK_DOWN	0x4000
+#define  GSWIP_MDIO_PHY_LINK_UP		0x2000
 
-#define MDIO_GLOB_ENABLE	0x8000
-#define MDIO_BUSY		BIT(12)
-#define MDIO_RD			BIT(11)
-#define MDIO_WR			BIT(10)
-#define MDIO_MASK		0x1f
-#define MDIO_ADDRSHIFT		5
-#define MDIO1_25MHZ		9
+#define  GSWIP_MDIO_PHY_SPEED_M10	0x0000
+#define  GSWIP_MDIO_PHY_SPEED_M100	0x0800
+#define  GSWIP_MDIO_PHY_SPEED_G1	0x1000
 
-#define MDIO_PHY_LINK_DOWN	0x4000
-#define MDIO_PHY_LINK_UP	0x2000
+#define  GSWIP_MDIO_PHY_FDUP_EN		0x0200
+#define  GSWIP_MDIO_PHY_FDUP_DIS	0x0600
 
-#define MDIO_PHY_SPEED_M10	0x0000
-#define MDIO_PHY_SPEED_M100	0x0800
-#define MDIO_PHY_SPEED_G1	0x1000
+#define  GSWIP_MDIO_PHY_FCONTX_EN	0x0100
+#define  GSWIP_MDIO_PHY_FCONTX_DIS	0x0180
 
-#define MDIO_PHY_FDUP_EN	0x0200
-#define MDIO_PHY_FDUP_DIS	0x0600
+#define  GSWIP_MDIO_PHY_FCONRX_EN	0x0020
+#define  GSWIP_MDIO_PHY_FCONRX_DIS	0x0060
 
-#define MDIO_PHY_FCONTX_EN	0x0100
-#define MDIO_PHY_FCONTX_DIS	0x0180
-
-#define MDIO_PHY_FCONRX_EN	0x0020
-#define MDIO_PHY_FCONRX_DIS	0x0060
-
-#define MDIO_PHY_LINK_MASK	0x6000
-#define MDIO_PHY_SPEED_MASK	0x1800
-#define MDIO_PHY_FDUP_MASK	0x0600
-#define MDIO_PHY_FCONTX_MASK	0x0180
-#define MDIO_PHY_FCONRX_MASK	0x0060
-#define MDIO_PHY_ADDR_MASK	0x001f
-#define MDIO_UPDATE_MASK	MDIO_PHY_ADDR_MASK | MDIO_PHY_FCONRX_MASK | \
-				MDIO_PHY_FCONTX_MASK | MDIO_PHY_LINK_MASK | \
-				MDIO_PHY_SPEED_MASK | MDIO_PHY_FDUP_MASK
+#define  GSWIP_MDIO_PHY_LINK_MASK	0x6000
+#define  GSWIP_MDIO_PHY_SPEED_MASK	0x1800
+#define  GSWIP_MDIO_PHY_FDUP_MASK	0x0600
+#define  GSWIP_MDIO_PHY_FCONTX_MASK	0x0180
+#define  GSWIP_MDIO_PHY_FCONRX_MASK	0x0060
+#define  GSWIP_MDIO_PHY_ADDR_MASK	0x001f
+#define  GSWIP_MDIO_PHY_MASK		GSWIP_MDIO_PHY_ADDR_MASK | \
+					GSWIP_MDIO_PHY_FCONRX_MASK | \
+					GSWIP_MDIO_PHY_FCONTX_MASK | \
+					GSWIP_MDIO_PHY_LINK_MASK | \
+					GSWIP_MDIO_PHY_SPEED_MASK | \
+					GSWIP_MDIO_PHY_FDUP_MASK
+#define GSWIP_MDIO_CLK_CFG0		0x002C
+#define GSWIP_MDIO_CLK_CFG1		0x0030
 
 /* MII */
 #define MII_CFG(p)		(p * 8)
@@ -349,8 +347,8 @@ static int xrx200_mdio_poll(struct gswip_priv *priv)
 	unsigned cnt = 10000;
 
 	while (likely(cnt--)) {
-		unsigned ctrl = gswip_mdio_r32(priv, MDIO_CTRL);
-		if ((ctrl & MDIO_BUSY) == 0)
+		unsigned ctrl = gswip_mdio_r32(priv, GSWIP_MDIO_CTRL);
+		if ((ctrl & GSWIP_MDIO_CTRL_BUSY) == 0)
 			return 0;
 		cpu_relax();
 	}
@@ -365,11 +363,11 @@ static int xrx200_mdio_wr(struct mii_bus *bus, int addr, int reg, u16 val)
 	if (xrx200_mdio_poll(priv))
 		return -EIO;
 
-	gswip_mdio_w32(priv, val, MDIO_WRITE);
-	gswip_mdio_w32(priv, MDIO_BUSY | MDIO_WR |
-		((addr & MDIO_MASK) << MDIO_ADDRSHIFT) |
-		(reg & MDIO_MASK),
-		MDIO_CTRL);
+	gswip_mdio_w32(priv, val, GSWIP_MDIO_WRITE);
+	gswip_mdio_w32(priv, GSWIP_MDIO_CTRL_BUSY | GSWIP_MDIO_CTRL_WR |
+		((addr & GSWIP_MDIO_CTRL_PHYAD_MASK) << GSWIP_MDIO_CTRL_PHYAD_SHIFT) |
+		(reg & GSWIP_MDIO_CTRL_REGAD_MASK),
+		GSWIP_MDIO_CTRL);
 
 	return 0;
 }
@@ -381,15 +379,15 @@ static int xrx200_mdio_rd(struct mii_bus *bus, int addr, int reg)
 	if (xrx200_mdio_poll(priv))
 		return -EIO;
 
-	gswip_mdio_w32(priv, MDIO_BUSY | MDIO_RD |
-		((addr & MDIO_MASK) << MDIO_ADDRSHIFT) |
-		(reg & MDIO_MASK),
-		MDIO_CTRL);
+	gswip_mdio_w32(priv, GSWIP_MDIO_CTRL_BUSY | GSWIP_MDIO_CTRL_RD |
+		((addr & GSWIP_MDIO_CTRL_PHYAD_MASK) << GSWIP_MDIO_CTRL_PHYAD_SHIFT) |
+		(reg & GSWIP_MDIO_CTRL_REGAD_MASK),
+		GSWIP_MDIO_CTRL);
 
 	if (xrx200_mdio_poll(priv))
 		return -EIO;
 
-	return gswip_mdio_r32(priv, MDIO_READ);
+	return gswip_mdio_r32(priv, GSWIP_MDIO_READ);
 }
 
 static int gswip_mdio(struct gswip_priv *priv, struct device_node *mdio_np)
@@ -535,7 +533,7 @@ static int gswip_setup(struct dsa_switch *ds)
 	}
 
 	/* enable Switch */
-	gswip_mdio_w32_mask(priv, 0, MDIO_GLOB_ENABLE, MDIO_GLOB);
+	gswip_mdio_w32_mask(priv, 0, GSWIP_MDIO_GLOB_ENABLE, GSWIP_MDIO_GLOB);
 
 	xrx200_pci_microcode(priv);
 
@@ -545,7 +543,7 @@ static int gswip_setup(struct dsa_switch *ds)
 	gswip_switch_w32(priv, BIT(priv->cpu_port), GSWIP_PCE_PMAP3);
 
 	/* disable auto polling */
-	gswip_mdio_w32(priv, 0x0, MDIO_CLK_CFG0);
+	gswip_mdio_w32(priv, 0x0, GSWIP_MDIO_CLK_CFG0);
 
 	/* RMON Counter Enable CPU port */
 	gswip_switch_w32(priv, GSWIP_BM_PCFG_CNTEN, GSWIP_BM_PCFGx(priv->cpu_port));
@@ -573,7 +571,7 @@ static int gswip_setup(struct dsa_switch *ds)
 static void gswip_adjust_link(struct dsa_switch *ds, int port, struct phy_device *phydev)
 {
 	struct gswip_priv *priv = (struct gswip_priv *)ds->priv;
-	u16 phyaddr = phydev->mdio.addr & MDIO_PHY_ADDR_MASK;
+	u16 phyaddr = phydev->mdio.addr & GSWIP_MDIO_PHY_ADDR_MASK;
 	u16 miirate = 0;
 	u16 miimode;
 	u16 lcl_adv = 0, rmt_adv = 0;
@@ -587,12 +585,12 @@ static void gswip_adjust_link(struct dsa_switch *ds, int port, struct phy_device
 
 	switch (phydev->speed) {
 	case SPEED_1000:
-		phyaddr |= MDIO_PHY_SPEED_G1;
+		phyaddr |= GSWIP_MDIO_PHY_SPEED_G1;
 		miirate = MII_CFG_RATE_M125;
 		break;
 
 	case SPEED_100:
-		phyaddr |= MDIO_PHY_SPEED_M100;
+		phyaddr |= GSWIP_MDIO_PHY_SPEED_M100;
 		switch (miimode) {
 		case MII_CFG_MODE_RMIIM:
 		case MII_CFG_MODE_RMIIP:
@@ -605,20 +603,20 @@ static void gswip_adjust_link(struct dsa_switch *ds, int port, struct phy_device
 		break;
 
 	default:
-		phyaddr |= MDIO_PHY_SPEED_M10;
+		phyaddr |= GSWIP_MDIO_PHY_SPEED_M10;
 		miirate = MII_CFG_RATE_M2P5;
 		break;
 	}
 
 	if (phydev->link)
-		phyaddr |= MDIO_PHY_LINK_UP;
+		phyaddr |= GSWIP_MDIO_PHY_LINK_UP;
 	else
-		phyaddr |= MDIO_PHY_LINK_DOWN;
+		phyaddr |= GSWIP_MDIO_PHY_LINK_DOWN;
 
 	if (phydev->duplex == DUPLEX_FULL)
-		phyaddr |= MDIO_PHY_FDUP_EN;
+		phyaddr |= GSWIP_MDIO_PHY_FDUP_EN;
 	else
-		phyaddr |= MDIO_PHY_FDUP_DIS;
+		phyaddr |= GSWIP_MDIO_PHY_FDUP_DIS;
 
 	if (phydev->pause)
 		rmt_adv = LPA_PAUSE_CAP;
@@ -633,15 +631,15 @@ static void gswip_adjust_link(struct dsa_switch *ds, int port, struct phy_device
 	flowctrl = mii_resolve_flowctrl_fdx(lcl_adv, rmt_adv);
 
 	if (flowctrl & FLOW_CTRL_TX)
-		phyaddr |= MDIO_PHY_FCONTX_EN;
+		phyaddr |= GSWIP_MDIO_PHY_FCONTX_EN;
 	else
-		phyaddr |= MDIO_PHY_FCONTX_DIS;
+		phyaddr |= GSWIP_MDIO_PHY_FCONTX_DIS;
 	if (flowctrl & FLOW_CTRL_RX)
-		phyaddr |= MDIO_PHY_FCONRX_EN;
+		phyaddr |= GSWIP_MDIO_PHY_FCONRX_EN;
 	else
-		phyaddr |= MDIO_PHY_FCONRX_DIS;
+		phyaddr |= GSWIP_MDIO_PHY_FCONRX_DIS;
 
-	gswip_mdio_w32_mask(priv, MDIO_UPDATE_MASK, phyaddr, MDIO_PHY(port));
+	gswip_mdio_w32_mask(priv, GSWIP_MDIO_PHY_MASK, phyaddr, GSWIP_MDIO_PHY(port));
 	gswip_mii_w32_mask(priv, MII_CFG_RATE_MASK, miirate, MII_CFG(port));
 }
 
@@ -973,7 +971,7 @@ static int gswip_remove(struct platform_device *pdev)
 		return 0;
 
 	/* disable the switch */
-	gswip_mdio_w32_mask(priv, MDIO_GLOB_ENABLE, 0, MDIO_GLOB);
+	gswip_mdio_w32_mask(priv, GSWIP_MDIO_GLOB_ENABLE, 0, GSWIP_MDIO_GLOB);
 
 	dsa_unregister_switch(priv->ds);
 
