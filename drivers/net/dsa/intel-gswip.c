@@ -37,23 +37,6 @@
 #define XRX200_PCE_VLANMAP_IDX	0x02
 
 /* fetch / store dma */
-#define FDMA_PCTRL0		0x2A00
-#define FDMA_PCTRLx(x)		(FDMA_PCTRL0 + ((x) * 0x18))
-#define SDMA_PCTRL0		0x2F00
-#define SDMA_PCTRLx(x)		(SDMA_PCTRL0 + ((x) * 0x18))
-
-#define PCE_PCTRL00		0x1200
-#define PCE_PCTRL0x(x)		(PCE_PCTRL00 + ((x) * 0x28))
-#define  PCE_PCTRL0_PSTATE_LISTEN	0x0
-#define  PCE_PCTRL0_PSTATE_RX		0x1
-#define  PCE_PCTRL0_PSTATE_TX		0x2
-#define  PCE_PCTRL0_PSTATE_LEARNING 	0x3
-#define  PCE_PCTRL0_PSTATE_FORWARDING 	0x7
-#define  PCE_PCTRL0_PSTATE_MASK 	0x7
-
-/* buffer management */
-#define BM_PCFG0		0x200
-#define BM_PCFGx(x)		(BM_PCFG0 + (x * 8))
 
 /* MDIO */
 #define MDIO_GLOB		0x0000
@@ -118,61 +101,87 @@
 #define MII_CFG_RATE_AUTO	0x40
 #define MII_CFG_RATE_MASK	0x70
 
-/* cpu port mac */
-#define PMAC_HD_CTL		0x0000
-#define PMAC_RX_IPG		0x0024
-#define PMAC_EWAN		0x002c
 
-#define PMAC_IPG_MASK		0xf
-#define PMAC_HD_CTL_AS		0x0008
-#define PMAC_HD_CTL_AC		0x0004
-#define PMAC_HD_CTL_RC		0x0010
-#define PMAC_HD_CTL_RXSH	0x0040
-#define PMAC_HD_CTL_AST		0x0080
-#define PMAC_HD_CTL_RST		0x0100
 
-/* BM RAM */
-#define BM_RAM_VAL(x)		(0x10C - ((x) * 4))
-#define BM_RAM_ADDR		0x110
-#define BM_RAM_CTRL		0x114
-#define  BM_RAM_CTRL_BAS		BIT(15)
-#define  BM_RAM_CTRL_OPMOD		BIT(5)
-#define  BM_RAM_CTRL_ADDR_MASK		GENMASK(4, 0)
 
-/* PCE */
-#define PCE_TBL_KEY(x)		(0x111C - ((x) * 4))
-#define PCE_TBL_MASK		0x1120
-#define PCE_TBL_VAL(x)		(0x1134 - ((x) * 4))
-#define PCE_TBL_ADDR		0x1138
-#define PCE_TBL_CTRL		0x113c
-#define  PCE_TBL_CTRL_BAS		BIT(15)
-#define  PCE_TBL_CTRL_TYPE		BIT(13)
-#define  PCE_TBL_CTRL_VLD		BIT(12)
-#define  PCE_TBL_CTRL_KEYFORM		BIT(11)
-#define  PCE_TBL_CTRL_GMAP_MASK		GENMASK(10, 7)
-#define  PCE_TBL_CTRL_OPMOD_MASK	GENMASK(6, 5)
-#define  PCE_TBL_CTRL_OPMOD_ADRD	0x00
-#define  PCE_TBL_CTRL_OPMOD_ADWR	0x20
-#define  PCE_TBL_CTRL_OPMOD_KSRD	0x40
-#define  PCE_TBL_CTRL_OPMOD_KSWR	0x60
-#define  PCE_TBL_CTRL_ADDR_MASK		GENMASK(4, 0)
-#define PCE_PMAP1		0x114c /* Monitoring port map */
-#define PCE_PMAP2		0x1150 /* Default Multicast port map */
-#define PCE_PMAP3		0x1154 /* Default Unknown Unicast port map */
-#define PCE_GCTRL_REG(x)	(0x1158 + (x * 4))
-#define PCE_PCTRL_REG(p, x)	(0x1200 + (((p * 0xa) + x) * 4))
 
-#define PCE_INGRESS		BIT(11)
+#define GSWIP_ETHSW_SWRES		0x000
+#define  GSWIP_ETHSW_SWRES_R1		BIT(1)	/* GSWIP Software reset */
+#define  GSWIP_ETHSW_SWRES_R0		BIT(0)	/* GSWIP Hardware reset */
 
-/* MAC */
-#define MAC_FLEN_REG		(0x2314)
-#define MAC_CTRL_REG(p, x)	(0x240c + (((p * 0xc) + x) * 4))
-
-/* buffer management */
-#define BM_PCFG(p)		(0x200 + (p * 8))
-
+#define GSWIP_BM_RAM_VAL(x)		(0x10C - ((x) * 4))
+#define GSWIP_BM_RAM_ADDR		0x110
+#define GSWIP_BM_RAM_CTRL		0x114
+#define  GSWIP_BM_RAM_CTRL_BAS		BIT(15)
+#define  GSWIP_BM_RAM_CTRL_OPMOD	BIT(5)
+#define  GSWIP_BM_RAM_CTRL_ADDR_MASK	GENMASK(4, 0)
 #define GSWIP_BM_QUEUE_GCTRL		0x0128
 #define  GSWIP_BM_QUEUE_GCTRL_GL_MOD	BIT(10)
+/* buffer management Port Configuration Register */
+#define GSWIP_BM_PCFGx(p)		(0x200 + (p * 8))
+#define  GSWIP_BM_PCFG_CNTEN		BIT(0)	/* RMON Counter Enable */
+#define  GSWIP_BM_PCFG_IGCNT		BIT(1)	/* Ingres Special Tag RMON count */
+/* buffer management Port Control Register */
+#define GSWIP_BM_CTRLx(p)		(0x204 + (p * 8))
+#define  GSWIP_BM_CTRL_RAM1_RES		BIT(0)	/* Software Reset for RMON RAM 1 */
+#define  GSWIP_BM_CTRL_RAM2_RES		BIT(1)	/* Software Reset for RMON RAM 2 */
+
+/* PCE */
+#define GSWIP_PCE_TBL_KEY(x)		(0x111C - ((x) * 4))
+#define GSWIP_PCE_TBL_MASK		0x1120
+#define GSWIP_PCE_TBL_VAL(x)		(0x1134 - ((x) * 4))
+#define GSWIP_PCE_TBL_ADDR		0x1138
+#define GSWIP_PCE_TBL_CTRL		0x113c
+#define  GSWIP_PCE_TBL_CTRL_BAS		BIT(15)
+#define  GSWIP_PCE_TBL_CTRL_TYPE	BIT(13)
+#define  GSWIP_PCE_TBL_CTRL_VLD		BIT(12)
+#define  GSWIP_PCE_TBL_CTRL_KEYFORM	BIT(11)
+#define  GSWIP_PCE_TBL_CTRL_GMAP_MASK	GENMASK(10, 7)
+#define  GSWIP_PCE_TBL_CTRL_OPMOD_MASK	GENMASK(6, 5)
+#define  GSWIP_PCE_TBL_CTRL_OPMOD_ADRD	0x00
+#define  GSWIP_PCE_TBL_CTRL_OPMOD_ADWR	0x20
+#define  GSWIP_PCE_TBL_CTRL_OPMOD_KSRD	0x40
+#define  GSWIP_PCE_TBL_CTRL_OPMOD_KSWR	0x60
+#define  GSWIP_PCE_TBL_CTRL_ADDR_MASK	GENMASK(4, 0)
+#define GSWIP_PCE_PMAP1			0x114c	/* Monitoring port map */
+#define GSWIP_PCE_PMAP2			0x1150	/* Default Multicast port map */
+#define GSWIP_PCE_PMAP3			0x1154	/* Default Unknown Unicast port map */
+#define GSWIP_PCE_GCTRL_0		0x1158
+#define  GSWIP_PCE_GCTRL_0_MC_VALID	BIT(3)
+#define  GSWIP_PCE_GCTRL_0_VLAN		BIT(14) /* VLAN aware Switching */
+#define GSWIP_PCE_GCTRL_1		0x115C
+#define  GSWIP_PCE_GCTRL_1_MAC_GLOCK	BIT(2)	/* MAC Address table lock */
+#define  GSWIP_PCE_GCTRL_1_MAC_GLOCK_MOD	BIT(3) /* Mac address table lock forwarding mode */
+#define GSWIP_PCE_PCTRL_0p(p)		(0x1200 + (p * 0x28))
+#define  GSWIP_PCE_PCTRL_0_INGRESS	BIT(11)
+#define  GSWIP_PCE_PCTRL_0_PSTATE_LISTEN	0x0
+#define  GSWIP_PCE_PCTRL_0_PSTATE_RX		0x1
+#define  GSWIP_PCE_PCTRL_0_PSTATE_TX		0x2
+#define  GSWIP_PCE_PCTRL_0_PSTATE_LEARNING 	0x3
+#define  GSWIP_PCE_PCTRL_0_PSTATE_FORWARDING 	0x7
+#define  GSWIP_PCE_PCTRL_0_PSTATE_MASK 	GENMASK(2,0)
+
+#define GSWIP_MAC_FLEN			0x2314
+#define GSWIP_MAC_CTRL_2p(p)		(0x2414 + (p * 0x30))
+#define GSWIP_MAC_CTRL_2_MLEN		BIT(3) /* Maximum Untagged Frame Lnegth */
+
+/* Ethernet Switch Fetch DMA Port Control Register */
+#define GSWIP_FDMA_PCTRLx(p)		(0x2A00 + ((p) * 0x18))
+#define  GSWIP_FDMA_PCTRL_EN		BIT(0)	/* FDMA Port Enable */
+#define  GSWIP_FDMA_PCTRL_STEN		BIT(1)	/* Special Tag Insertion Enable */
+#define  GSWIP_FDMA_PCTRL_VLANMOD_MASK	GENMASK(4,3)	/* VLAN Modification Control */
+#define  GSWIP_FDMA_PCTRL_VLANMOD_SHIFT	3	/* VLAN Modification Control */
+#define  GSWIP_FDMA_PCTRL_VLANMOD_DIS	(0x0 << GSWIP_FDMA_PCTRL_VLANMOD_SHIFT)
+#define  GSWIP_FDMA_PCTRL_VLANMOD_PRIO	(0x1 << GSWIP_FDMA_PCTRL_VLANMOD_SHIFT)
+#define  GSWIP_FDMA_PCTRL_VLANMOD_ID	(0x2 << GSWIP_FDMA_PCTRL_VLANMOD_SHIFT)
+#define  GSWIP_FDMA_PCTRL_VLANMOD_BOTH	(0x3 << GSWIP_FDMA_PCTRL_VLANMOD_SHIFT)
+
+/* Ethernet Switch Store DMA Port Control Register */
+#define GSWIP_SDMA_PCTRLx(p)		(0x2F00 + ((p) * 0x18))
+#define  GSWIP_SDMA_PCTRL_EN		BIT(0)	/* SDMA Port Enable */
+#define  GSWIP_SDMA_PCTRL_FCEN		BIT(1)	/* Flow Control Enable */
+#define  GSWIP_SDMA_PCTRL_PAUFWD	BIT(1)	/* Pause Frame Forwarding */
+
 
 struct gswip_vlan {
 	struct net_device *bridge;
@@ -415,7 +424,7 @@ struct xrx200_pce_table_entry {
 
 static void gswip_wait_pce_tbl_ready(struct gswip_priv *priv)
 {
-	while (gswip_switch_r32(priv, PCE_TBL_CTRL) & PCE_TBL_CTRL_BAS)
+	while (gswip_switch_r32(priv, GSWIP_PCE_TBL_CTRL) & GSWIP_PCE_TBL_CTRL_BAS)
 		cond_resched();
 }
 
@@ -427,26 +436,26 @@ static void xrx200_pce_table_entry_read(struct gswip_priv *priv,
 
 	gswip_wait_pce_tbl_ready(priv);
 
-	gswip_switch_w32(priv, tbl->index, PCE_TBL_ADDR);
-	gswip_switch_w32_mask(priv, PCE_TBL_CTRL_ADDR_MASK | PCE_TBL_CTRL_OPMOD_MASK,
-			      tbl->table | PCE_TBL_CTRL_OPMOD_ADRD | PCE_TBL_CTRL_BAS,
-			      PCE_TBL_CTRL);
+	gswip_switch_w32(priv, tbl->index, GSWIP_PCE_TBL_ADDR);
+	gswip_switch_w32_mask(priv, GSWIP_PCE_TBL_CTRL_ADDR_MASK | GSWIP_PCE_TBL_CTRL_OPMOD_MASK,
+			      tbl->table | GSWIP_PCE_TBL_CTRL_OPMOD_ADRD | GSWIP_PCE_TBL_CTRL_BAS,
+			      GSWIP_PCE_TBL_CTRL);
 
 	gswip_wait_pce_tbl_ready(priv);
 
 	for (i = 0; i < ARRAY_SIZE(tbl->key); i++)
-		tbl->key[i] = gswip_switch_r32(priv, PCE_TBL_KEY(i));
+		tbl->key[i] = gswip_switch_r32(priv, GSWIP_PCE_TBL_KEY(i));
 
 	for (i = 0; i < ARRAY_SIZE(tbl->val); i++)
-		tbl->val[i] = gswip_switch_r32(priv, PCE_TBL_VAL(i));
+		tbl->val[i] = gswip_switch_r32(priv, GSWIP_PCE_TBL_VAL(i));
 
-	tbl->mask = gswip_switch_r32(priv, PCE_TBL_MASK);
+	tbl->mask = gswip_switch_r32(priv, GSWIP_PCE_TBL_MASK);
 
-	crtl = gswip_switch_r32(priv, PCE_TBL_CTRL);
+	crtl = gswip_switch_r32(priv, GSWIP_PCE_TBL_CTRL);
 
-	tbl->type = !!(crtl & PCE_TBL_CTRL_TYPE);
-	tbl->valid = !!(crtl & PCE_TBL_CTRL_VLD);
-	tbl->gmap = (crtl & PCE_TBL_CTRL_GMAP_MASK) >> 7;
+	tbl->type = !!(crtl & GSWIP_PCE_TBL_CTRL_TYPE);
+	tbl->valid = !!(crtl & GSWIP_PCE_TBL_CTRL_VLD);
+	tbl->gmap = (crtl & GSWIP_PCE_TBL_CTRL_GMAP_MASK) >> 7;
 }
 
 static void xrx200_pce_table_entry_write(struct gswip_priv *priv, struct xrx200_pce_table_entry *tbl)
@@ -456,32 +465,32 @@ static void xrx200_pce_table_entry_write(struct gswip_priv *priv, struct xrx200_
 
 	gswip_wait_pce_tbl_ready(priv);
 
-	gswip_switch_w32(priv, tbl->index, PCE_TBL_ADDR);
-	gswip_switch_w32_mask(priv, PCE_TBL_CTRL_ADDR_MASK | PCE_TBL_CTRL_OPMOD_MASK,
-			      tbl->table | PCE_TBL_CTRL_OPMOD_ADWR,
-			      PCE_TBL_CTRL);
+	gswip_switch_w32(priv, tbl->index, GSWIP_PCE_TBL_ADDR);
+	gswip_switch_w32_mask(priv, GSWIP_PCE_TBL_CTRL_ADDR_MASK | GSWIP_PCE_TBL_CTRL_OPMOD_MASK,
+			      tbl->table | GSWIP_PCE_TBL_CTRL_OPMOD_ADWR,
+			      GSWIP_PCE_TBL_CTRL);
 
 	for (i = 0; i < ARRAY_SIZE(tbl->key); i++)
-		gswip_switch_w32(priv, tbl->key[i], PCE_TBL_KEY(i));
+		gswip_switch_w32(priv, tbl->key[i], GSWIP_PCE_TBL_KEY(i));
 
 	for (i = 0; i < ARRAY_SIZE(tbl->val); i++)
-		gswip_switch_w32(priv, tbl->val[i], PCE_TBL_VAL(i));
+		gswip_switch_w32(priv, tbl->val[i], GSWIP_PCE_TBL_VAL(i));
 
-	gswip_switch_w32_mask(priv, PCE_TBL_CTRL_ADDR_MASK | PCE_TBL_CTRL_OPMOD_MASK,
-			      tbl->table | PCE_TBL_CTRL_OPMOD_ADWR,
-			      PCE_TBL_CTRL);
+	gswip_switch_w32_mask(priv, GSWIP_PCE_TBL_CTRL_ADDR_MASK | GSWIP_PCE_TBL_CTRL_OPMOD_MASK,
+			      tbl->table | GSWIP_PCE_TBL_CTRL_OPMOD_ADWR,
+			      GSWIP_PCE_TBL_CTRL);
 
-	gswip_switch_w32(priv, tbl->mask, PCE_TBL_MASK);
+	gswip_switch_w32(priv, tbl->mask, GSWIP_PCE_TBL_MASK);
 
-	crtl = gswip_switch_r32(priv, PCE_TBL_CTRL);
-	crtl &= ~(PCE_TBL_CTRL_TYPE | PCE_TBL_CTRL_VLD | PCE_TBL_CTRL_GMAP_MASK);
+	crtl = gswip_switch_r32(priv, GSWIP_PCE_TBL_CTRL);
+	crtl &= ~(GSWIP_PCE_TBL_CTRL_TYPE | GSWIP_PCE_TBL_CTRL_VLD | GSWIP_PCE_TBL_CTRL_GMAP_MASK);
 	if (tbl->type)
-		crtl |= PCE_TBL_CTRL_TYPE;
+		crtl |= GSWIP_PCE_TBL_CTRL_TYPE;
 	if (tbl->valid)
-		crtl |= PCE_TBL_CTRL_VLD;
-	crtl |= (tbl->gmap << 7) & PCE_TBL_CTRL_GMAP_MASK;
-	crtl |= PCE_TBL_CTRL_BAS;
-	gswip_switch_w32(priv, crtl, PCE_TBL_CTRL);
+		crtl |= GSWIP_PCE_TBL_CTRL_VLD;
+	crtl |= (tbl->gmap << 7) & GSWIP_PCE_TBL_CTRL_GMAP_MASK;
+	crtl |= GSWIP_PCE_TBL_CTRL_BAS;
+	gswip_switch_w32(priv, crtl, GSWIP_PCE_TBL_CTRL);
 
 	gswip_wait_pce_tbl_ready(priv);
 }
@@ -490,24 +499,24 @@ static void xrx200_pci_microcode(struct gswip_priv *priv)
 {
 	int i;
 
-	gswip_switch_w32_mask(priv, PCE_TBL_CTRL_ADDR_MASK | PCE_TBL_CTRL_OPMOD_MASK,
-			      PCE_TBL_CTRL_OPMOD_ADWR, PCE_TBL_CTRL);
-	gswip_switch_w32(priv, 0, PCE_TBL_MASK);
+	gswip_switch_w32_mask(priv, GSWIP_PCE_TBL_CTRL_ADDR_MASK | GSWIP_PCE_TBL_CTRL_OPMOD_MASK,
+			      GSWIP_PCE_TBL_CTRL_OPMOD_ADWR, GSWIP_PCE_TBL_CTRL);
+	gswip_switch_w32(priv, 0, GSWIP_PCE_TBL_MASK);
 
 	for (i = 0; i < ARRAY_SIZE(pce_microcode); i++) {
-		gswip_switch_w32(priv, i, PCE_TBL_ADDR);
-		gswip_switch_w32(priv, pce_microcode[i].val[3], PCE_TBL_VAL(0));
-		gswip_switch_w32(priv, pce_microcode[i].val[2], PCE_TBL_VAL(1));
-		gswip_switch_w32(priv, pce_microcode[i].val[1], PCE_TBL_VAL(2));
-		gswip_switch_w32(priv, pce_microcode[i].val[0], PCE_TBL_VAL(3));
+		gswip_switch_w32(priv, i, GSWIP_PCE_TBL_ADDR);
+		gswip_switch_w32(priv, pce_microcode[i].val[3], GSWIP_PCE_TBL_VAL(0));
+		gswip_switch_w32(priv, pce_microcode[i].val[2], GSWIP_PCE_TBL_VAL(1));
+		gswip_switch_w32(priv, pce_microcode[i].val[1], GSWIP_PCE_TBL_VAL(2));
+		gswip_switch_w32(priv, pce_microcode[i].val[0], GSWIP_PCE_TBL_VAL(3));
 
 		// start the table access:
-		gswip_switch_w32_mask(priv, 0, PCE_TBL_CTRL_BAS, PCE_TBL_CTRL);
+		gswip_switch_w32_mask(priv, 0, GSWIP_PCE_TBL_CTRL_BAS, GSWIP_PCE_TBL_CTRL);
 		gswip_wait_pce_tbl_ready(priv);
 	}
 
 	/* tell the switch that the microcode is loaded */
-	gswip_switch_w32_mask(priv, 0, BIT(3), PCE_GCTRL_REG(0));
+	gswip_switch_w32_mask(priv, 0, GSWIP_PCE_GCTRL_0_MC_VALID, GSWIP_PCE_GCTRL_0);
 }
 
 static int gswip_setup(struct dsa_switch *ds)
@@ -515,14 +524,14 @@ static int gswip_setup(struct dsa_switch *ds)
 	struct gswip_priv *priv = ds->priv;
 	int i;
 
-	gswip_switch_w32(priv, 1, 0);
+	gswip_switch_w32(priv, GSWIP_ETHSW_SWRES_R0, GSWIP_ETHSW_SWRES);
 	msleep(10);
-	gswip_switch_w32(priv, 0, 0);
+	gswip_switch_w32(priv, 0, GSWIP_ETHSW_SWRES);
 
 	/* disable port fetch/store dma */
 	for (i = 0; i < 7; i++ ) {
-		gswip_switch_w32_mask(priv, 1, 0, FDMA_PCTRLx(i));
-		gswip_switch_w32_mask(priv, 1, 0, SDMA_PCTRLx(i));
+		gswip_switch_w32_mask(priv, GSWIP_FDMA_PCTRL_EN, 0, GSWIP_FDMA_PCTRLx(i));
+		gswip_switch_w32_mask(priv, GSWIP_SDMA_PCTRL_EN, 0, GSWIP_SDMA_PCTRLx(i));
 	}
 
 	/* enable Switch */
@@ -531,36 +540,33 @@ static int gswip_setup(struct dsa_switch *ds)
 	xrx200_pci_microcode(priv);
 
 	/* Default unknown Broadcat/Multicast/Unicast port maps */
-	gswip_switch_w32(priv, 0x40, PCE_PMAP1);
-	gswip_switch_w32(priv, 0x40, PCE_PMAP2);
-	gswip_switch_w32(priv, 0x40, PCE_PMAP3);
+	gswip_switch_w32(priv, BIT(priv->cpu_port), GSWIP_PCE_PMAP1);
+	gswip_switch_w32(priv, BIT(priv->cpu_port), GSWIP_PCE_PMAP2);
+	gswip_switch_w32(priv, BIT(priv->cpu_port), GSWIP_PCE_PMAP3);
 
 	/* disable auto polling */
 	gswip_mdio_w32(priv, 0x0, MDIO_CLK_CFG0);
 
-	/* RMON Counter Enable for all physical ports */
-	gswip_switch_w32(priv, 0x1, BM_PCFG(6));
-
-	/* enable port statistic counters */
-	gswip_switch_w32(priv, 0x1, BM_PCFGx(6));
+	/* RMON Counter Enable CPU port */
+	gswip_switch_w32(priv, GSWIP_BM_PCFG_CNTEN, GSWIP_BM_PCFGx(priv->cpu_port));
 
 	/* enable port fetch/store dma & VLAN Modification */
-	gswip_switch_w32_mask(priv, 0, 0x19, FDMA_PCTRLx(6));
-	gswip_switch_w32_mask(priv, 0, 0x01, SDMA_PCTRLx(6));
-	gswip_switch_w32_mask(priv, 0, PCE_INGRESS, PCE_PCTRL_REG(6, 0));
+	gswip_switch_w32_mask(priv, 0, GSWIP_FDMA_PCTRL_EN | GSWIP_FDMA_PCTRL_VLANMOD_BOTH, GSWIP_FDMA_PCTRLx(priv->cpu_port));
+	gswip_switch_w32_mask(priv, 0, GSWIP_SDMA_PCTRL_EN, GSWIP_SDMA_PCTRLx(priv->cpu_port));
+	gswip_switch_w32_mask(priv, 0, GSWIP_PCE_PCTRL_0_INGRESS, GSWIP_PCE_PCTRL_0p(priv->cpu_port));
 
 	/* enable special tag insertion on cpu port */
-	gswip_switch_w32_mask(priv, 0, 0x02, FDMA_PCTRLx(6));
-	gswip_switch_w32_mask(priv, 0, PCE_INGRESS, PCE_PCTRL_REG(6, 0));
-	gswip_switch_w32_mask(priv, 0, BIT(3), MAC_CTRL_REG(6, 2)); //  enable jumbo frame
-	gswip_switch_w32(priv, 1518 + 8 + 4 * 2, MAC_FLEN_REG); //  MAC frame + 8-byte special tag + 4-byte VLAN tag * 2
+	gswip_switch_w32_mask(priv, 0, GSWIP_FDMA_PCTRL_STEN, GSWIP_FDMA_PCTRLx(priv->cpu_port));
+	gswip_switch_w32_mask(priv, 0, GSWIP_PCE_PCTRL_0_INGRESS, GSWIP_PCE_PCTRL_0p(priv->cpu_port));
+	gswip_switch_w32_mask(priv, 0, GSWIP_MAC_CTRL_2_MLEN, GSWIP_MAC_CTRL_2p(priv->cpu_port));
+	gswip_switch_w32(priv, VLAN_ETH_FRAME_LEN + 8, GSWIP_MAC_FLEN);
 	gswip_switch_w32_mask(priv, 0, GSWIP_BM_QUEUE_GCTRL_GL_MOD, GSWIP_BM_QUEUE_GCTRL);
 
 	/* VLAN aware Switching */
-	gswip_switch_w32_mask(priv, 0, BIT(14), PCE_GCTRL_REG(0));
+	gswip_switch_w32_mask(priv, 0, GSWIP_PCE_GCTRL_0_VLAN, GSWIP_PCE_GCTRL_0);
 
 	/* Mac Address Table Lock */
-	gswip_switch_w32_mask(priv, 0, BIT(2) | BIT(3), PCE_GCTRL_REG(1));
+	gswip_switch_w32_mask(priv, 0, GSWIP_PCE_GCTRL_1_MAC_GLOCK | GSWIP_PCE_GCTRL_1_MAC_GLOCK_MOD, GSWIP_PCE_GCTRL_1);
 	return 0;
 }
 
@@ -574,7 +580,7 @@ static void gswip_adjust_link(struct dsa_switch *ds, int port, struct phy_device
 	u8 flowctrl;
 
 	/* do not run this for the CPU port 6 */
-	if (port > 5)
+	if (port >= priv->cpu_port)
 		return;
 
 	miimode = gswip_mdio_r32(priv, MII_CFG(port)) & MII_CFG_MODE_MASK;
@@ -643,16 +649,13 @@ static int gswip_port_enable(struct dsa_switch *ds, int port, struct phy_device 
 {
 	struct gswip_priv *priv = (struct gswip_priv *)ds->priv;
 
-	/* RMON Counter Enable for all physical ports */
-	gswip_switch_w32(priv, 0x1, BM_PCFG(port));
-
-	/* enable port statistic counters */
-	gswip_switch_w32(priv, 0x1, BM_PCFGx(port));
+	/* RMON Counter Enable for port */
+	gswip_switch_w32(priv, GSWIP_BM_PCFG_CNTEN, GSWIP_BM_PCFGx(port));
 
 	/* enable port fetch/store dma & VLAN Modification */
-	gswip_switch_w32_mask(priv, 0, 0x19, FDMA_PCTRLx(port));
-	gswip_switch_w32_mask(priv, 0, 0x01, SDMA_PCTRLx(port));
-	gswip_switch_w32_mask(priv, 0, PCE_INGRESS, PCE_PCTRL_REG(port, 0));
+	gswip_switch_w32_mask(priv, 0, GSWIP_FDMA_PCTRL_EN | GSWIP_FDMA_PCTRL_VLANMOD_BOTH, GSWIP_FDMA_PCTRLx(port));
+	gswip_switch_w32_mask(priv, 0, GSWIP_SDMA_PCTRL_EN, GSWIP_SDMA_PCTRLx(port));
+	gswip_switch_w32_mask(priv, 0, GSWIP_PCE_PCTRL_0_INGRESS, GSWIP_PCE_PCTRL_0p(port));
 
 	return 0;
 }
@@ -661,8 +664,8 @@ static void gswip_port_disable(struct dsa_switch *ds, int port, struct phy_devic
 {
 	struct gswip_priv *priv = (struct gswip_priv *)ds->priv;
 
-	gswip_switch_w32_mask(priv, 1, 0, FDMA_PCTRLx(port));
-	gswip_switch_w32_mask(priv, 1, 0, SDMA_PCTRLx(port));
+	gswip_switch_w32_mask(priv, GSWIP_FDMA_PCTRL_EN, 0, GSWIP_FDMA_PCTRLx(port));
+	gswip_switch_w32_mask(priv, GSWIP_SDMA_PCTRL_EN, 0, GSWIP_SDMA_PCTRLx(port));
 }
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,15,0)
@@ -682,23 +685,23 @@ static void gswip_stp_state_set(struct dsa_switch *ds, int port, u8 state)
 
 	switch (state) {
 	case BR_STATE_DISABLED:
-		gswip_switch_w32_mask(priv, 1, 0, SDMA_PCTRLx(port));
+		gswip_switch_w32_mask(priv, GSWIP_SDMA_PCTRL_EN, 0, GSWIP_SDMA_PCTRLx(port));
 		return;
 	case BR_STATE_BLOCKING:
 	case BR_STATE_LISTENING:
-		stp_state = PCE_PCTRL0_PSTATE_LISTEN;
+		stp_state = GSWIP_PCE_PCTRL_0_PSTATE_LISTEN;
 		break;
 	case BR_STATE_LEARNING:
-		stp_state = PCE_PCTRL0_PSTATE_LEARNING;
+		stp_state = GSWIP_PCE_PCTRL_0_PSTATE_LEARNING;
 		break;
 	case BR_STATE_FORWARDING:
 	default:
-		stp_state = PCE_PCTRL0_PSTATE_FORWARDING;
+		stp_state = GSWIP_PCE_PCTRL_0_PSTATE_FORWARDING;
 		break;
 	}
 
-	gswip_switch_w32_mask(priv, 0, 1, SDMA_PCTRLx(port));
-	gswip_switch_w32_mask(priv, PCE_PCTRL0_PSTATE_MASK, stp_state, PCE_PCTRL0x(port));
+	gswip_switch_w32_mask(priv, 0, GSWIP_SDMA_PCTRL_EN, GSWIP_SDMA_PCTRLx(port));
+	gswip_switch_w32_mask(priv, GSWIP_PCE_PCTRL_0_PSTATE_MASK, stp_state, GSWIP_PCE_PCTRL_0p(port));
 }
 
 static struct gswip_vlan *gswip_vlan_entry(struct gswip_priv *priv, int vlan)
@@ -849,16 +852,16 @@ static u32 gswip_bcm_ram_entry_read(struct gswip_priv *priv, u32 table, u32 inde
 {
 	u32 result;
 
-	gswip_switch_w32(priv, index, BM_RAM_ADDR);
-	gswip_switch_w32_mask(priv, BM_RAM_CTRL_ADDR_MASK | BM_RAM_CTRL_OPMOD,
-			      table | BM_RAM_CTRL_BAS,
-			      BM_RAM_CTRL);
+	gswip_switch_w32(priv, index, GSWIP_BM_RAM_ADDR);
+	gswip_switch_w32_mask(priv, GSWIP_BM_RAM_CTRL_ADDR_MASK | GSWIP_BM_RAM_CTRL_OPMOD,
+			      table | GSWIP_BM_RAM_CTRL_BAS,
+			      GSWIP_BM_RAM_CTRL);
 
-	while (gswip_switch_r32(priv, BM_RAM_CTRL) & BM_RAM_CTRL_BAS)
+	while (gswip_switch_r32(priv, GSWIP_BM_RAM_CTRL) & GSWIP_BM_RAM_CTRL_BAS)
 		cond_resched();
 
-	result = gswip_switch_r32(priv, BM_RAM_VAL(0));
-	result |= gswip_switch_r32(priv, BM_RAM_VAL(1)) << 16;
+	result = gswip_switch_r32(priv, GSWIP_BM_RAM_VAL(0));
+	result |= gswip_switch_r32(priv, GSWIP_BM_RAM_VAL(1)) << 16;
 
 	return result;
 }
@@ -942,16 +945,21 @@ static int gswip_probe(struct platform_device *pdev)
 	/* bring up the mdio bus */
 	mdio_np = of_find_compatible_node(pdev->dev.of_node, NULL,
 				"lantiq,xrx200-mdio");
-	if (mdio_np)
-		if (gswip_mdio(priv, mdio_np))
+	if (mdio_np) {
+		err = gswip_mdio(priv, mdio_np);
+		if (err) {
 			dev_err(dev, "mdio probe failed\n");
+			return err;
+		}
+	}
 
 	platform_set_drvdata(pdev, priv);
 
 	err = dsa_register_switch(priv->ds);
-	if (err && mdio_np) {
+	if (err) {
 		dev_err(dev, "dsa switch register failed: %i\n", err);
-		mdiobus_unregister(priv->ds->slave_mii_bus);
+		if (mdio_np)
+			mdiobus_unregister(priv->ds->slave_mii_bus);
 	}
 
 	return err;
@@ -969,7 +977,8 @@ static int gswip_remove(struct platform_device *pdev)
 
 	dsa_unregister_switch(priv->ds);
 
-	mdiobus_unregister(priv->ds->slave_mii_bus);
+	if (priv->ds->slave_mii_bus)
+		mdiobus_unregister(priv->ds->slave_mii_bus);
 
 	return 0;
 }
