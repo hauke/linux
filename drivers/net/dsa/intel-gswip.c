@@ -281,61 +281,62 @@ static const struct gswip_rmon_cnt_desc gswip_rmon_cnt[] = {
 	MIB_DESC(2, 0x0E, "TxGoodBytes"),
 };
 
-static u32 gswip_switch_r32(struct gswip_priv *priv, u32 offset)
+static u32 gswip_switch_r(struct gswip_priv *priv, u32 offset)
 {
 	return __raw_readl(priv->gswip + (offset * 4));
 }
 
-static void gswip_switch_w32(struct gswip_priv *priv, u32 val, u32 offset)
+static void gswip_switch_w(struct gswip_priv *priv, u32 val, u32 offset)
 {
 	return __raw_writel(val, priv->gswip + (offset * 4));
 }
 
-static void gswip_switch_w32_mask(struct gswip_priv *priv, u32 clear, u32 set, u32 offset)
+static void gswip_switch_mask(struct gswip_priv *priv, u32 clear, u32 set, u32 offset)
 {
-	u32 val = gswip_switch_r32(priv, offset);
+	u32 val = gswip_switch_r(priv, offset);
 
 	val &= ~(clear);
 	val |= set;
-	gswip_switch_w32(priv, val, offset);
+	gswip_switch_w(priv, val, offset);
 }
 
-static u32 gswip_mdio_r32(struct gswip_priv *priv, u32 offset)
+static u32 gswip_mdio_r(struct gswip_priv *priv, u32 offset)
 {
 	return __raw_readl(priv->mdio + (offset * 4));
 }
 
-static void gswip_mdio_w32(struct gswip_priv *priv, u32 val, u32 offset)
+static void gswip_mdio_w(struct gswip_priv *priv, u32 val, u32 offset)
 {
 	return __raw_writel(val, priv->mdio + (offset * 4));
 }
 
-static void gswip_mdio_w32_mask(struct gswip_priv *priv, u32 clear, u32 set, u32 offset)
+static void gswip_mdio_mask(struct gswip_priv *priv, u32 clear, u32 set, u32 offset)
 {
-	u32 val = gswip_mdio_r32(priv, offset);
+	u32 val = gswip_mdio_r(priv, offset);
 
 	val &= ~(clear);
 	val |= set;
-	gswip_mdio_w32(priv, val, offset);
+	gswip_mdio_w(priv, val, offset);
 }
 
-static u32 gswip_mii_r32(struct gswip_priv *priv, u32 offset)
+static u32 gswip_mii_r(struct gswip_priv *priv, u32 offset)
 {
 	return __raw_readl(priv->mii + (offset * 4));
 }
 
-static void gswip_mii_w32(struct gswip_priv *priv, u32 val, u32 offset)
+static void gswip_mii_w(struct gswip_priv *priv, u32 val, u32 offset)
 {
 	return __raw_writel(val, priv->mii + (offset * 4));
 }
 
-static void gswip_mii_w32_mask(struct gswip_priv *priv, u32 clear, u32 set, u32 offset)
+static void gswip_mii_mask(struct gswip_priv *priv, u32 clear, u32 set,
+			       u32 offset)
 {
-	u32 val = gswip_mii_r32(priv, offset);
+	u32 val = gswip_mii_r(priv, offset);
 
 	val &= ~(clear);
 	val |= set;
-	gswip_mii_w32(priv, val, offset);
+	gswip_mii_w(priv, val, offset);
 }
 
 static int xrx200_mdio_poll(struct gswip_priv *priv)
@@ -343,7 +344,7 @@ static int xrx200_mdio_poll(struct gswip_priv *priv)
 	unsigned cnt = 10000;
 
 	while (likely(cnt--)) {
-		unsigned ctrl = gswip_mdio_r32(priv, GSWIP_MDIO_CTRL);
+		unsigned ctrl = gswip_mdio_r(priv, GSWIP_MDIO_CTRL);
 		if ((ctrl & GSWIP_MDIO_CTRL_BUSY) == 0)
 			return 0;
 		cpu_relax();
@@ -359,8 +360,8 @@ static int xrx200_mdio_wr(struct mii_bus *bus, int addr, int reg, u16 val)
 	if (xrx200_mdio_poll(priv))
 		return -EIO;
 
-	gswip_mdio_w32(priv, val, GSWIP_MDIO_WRITE);
-	gswip_mdio_w32(priv, GSWIP_MDIO_CTRL_BUSY | GSWIP_MDIO_CTRL_WR |
+	gswip_mdio_w(priv, val, GSWIP_MDIO_WRITE);
+	gswip_mdio_w(priv, GSWIP_MDIO_CTRL_BUSY | GSWIP_MDIO_CTRL_WR |
 		((addr & GSWIP_MDIO_CTRL_PHYAD_MASK) << GSWIP_MDIO_CTRL_PHYAD_SHIFT) |
 		(reg & GSWIP_MDIO_CTRL_REGAD_MASK),
 		GSWIP_MDIO_CTRL);
@@ -375,7 +376,7 @@ static int xrx200_mdio_rd(struct mii_bus *bus, int addr, int reg)
 	if (xrx200_mdio_poll(priv))
 		return -EIO;
 
-	gswip_mdio_w32(priv, GSWIP_MDIO_CTRL_BUSY | GSWIP_MDIO_CTRL_RD |
+	gswip_mdio_w(priv, GSWIP_MDIO_CTRL_BUSY | GSWIP_MDIO_CTRL_RD |
 		((addr & GSWIP_MDIO_CTRL_PHYAD_MASK) << GSWIP_MDIO_CTRL_PHYAD_SHIFT) |
 		(reg & GSWIP_MDIO_CTRL_REGAD_MASK),
 		GSWIP_MDIO_CTRL);
@@ -383,7 +384,7 @@ static int xrx200_mdio_rd(struct mii_bus *bus, int addr, int reg)
 	if (xrx200_mdio_poll(priv))
 		return -EIO;
 
-	return gswip_mdio_r32(priv, GSWIP_MDIO_READ);
+	return gswip_mdio_r(priv, GSWIP_MDIO_READ);
 }
 
 static int gswip_mdio(struct gswip_priv *priv, struct device_node *mdio_np)
@@ -418,7 +419,7 @@ struct xrx200_pce_table_entry {
 
 static void gswip_wait_pce_tbl_ready(struct gswip_priv *priv)
 {
-	while (gswip_switch_r32(priv, GSWIP_PCE_TBL_CTRL) & GSWIP_PCE_TBL_CTRL_BAS)
+	while (gswip_switch_r(priv, GSWIP_PCE_TBL_CTRL) & GSWIP_PCE_TBL_CTRL_BAS)
 		cond_resched();
 }
 
@@ -430,76 +431,87 @@ static void xrx200_pce_table_entry_read(struct gswip_priv *priv,
 
 	gswip_wait_pce_tbl_ready(priv);
 
-	gswip_switch_w32(priv, tbl->index, GSWIP_PCE_TBL_ADDR);
-	gswip_switch_w32_mask(priv, GSWIP_PCE_TBL_CTRL_ADDR_MASK | GSWIP_PCE_TBL_CTRL_OPMOD_MASK,
-			      tbl->table | GSWIP_PCE_TBL_CTRL_OPMOD_ADRD | GSWIP_PCE_TBL_CTRL_BAS,
+	gswip_switch_w(priv, tbl->index, GSWIP_PCE_TBL_ADDR);
+	gswip_switch_mask(priv, GSWIP_PCE_TBL_CTRL_ADDR_MASK |
+				    GSWIP_PCE_TBL_CTRL_OPMOD_MASK,
+			      tbl->table | GSWIP_PCE_TBL_CTRL_OPMOD_ADRD |
+			      		   GSWIP_PCE_TBL_CTRL_BAS,
 			      GSWIP_PCE_TBL_CTRL);
 
 	gswip_wait_pce_tbl_ready(priv);
 
 	for (i = 0; i < ARRAY_SIZE(tbl->key); i++)
-		tbl->key[i] = gswip_switch_r32(priv, GSWIP_PCE_TBL_KEY(i));
+		tbl->key[i] = gswip_switch_r(priv, GSWIP_PCE_TBL_KEY(i));
 
 	for (i = 0; i < ARRAY_SIZE(tbl->val); i++)
-		tbl->val[i] = gswip_switch_r32(priv, GSWIP_PCE_TBL_VAL(i));
+		tbl->val[i] = gswip_switch_r(priv, GSWIP_PCE_TBL_VAL(i));
 
-	tbl->mask = gswip_switch_r32(priv, GSWIP_PCE_TBL_MASK);
+	tbl->mask = gswip_switch_r(priv, GSWIP_PCE_TBL_MASK);
 
-	crtl = gswip_switch_r32(priv, GSWIP_PCE_TBL_CTRL);
+	crtl = gswip_switch_r(priv, GSWIP_PCE_TBL_CTRL);
 
 	tbl->type = !!(crtl & GSWIP_PCE_TBL_CTRL_TYPE);
 	tbl->valid = !!(crtl & GSWIP_PCE_TBL_CTRL_VLD);
 	tbl->gmap = (crtl & GSWIP_PCE_TBL_CTRL_GMAP_MASK) >> 7;
 }
 
-static void xrx200_pce_table_entry_write(struct gswip_priv *priv, struct xrx200_pce_table_entry *tbl)
+static void xrx200_pce_table_entry_write(struct gswip_priv *priv,
+					 struct xrx200_pce_table_entry *tbl)
 {
 	int i;
 	u16 crtl;
 
 	gswip_wait_pce_tbl_ready(priv);
 
-	gswip_switch_w32(priv, tbl->index, GSWIP_PCE_TBL_ADDR);
-	gswip_switch_w32_mask(priv, GSWIP_PCE_TBL_CTRL_ADDR_MASK | GSWIP_PCE_TBL_CTRL_OPMOD_MASK,
+	gswip_switch_w(priv, tbl->index, GSWIP_PCE_TBL_ADDR);
+	gswip_switch_mask(priv, GSWIP_PCE_TBL_CTRL_ADDR_MASK |
+				    GSWIP_PCE_TBL_CTRL_OPMOD_MASK,
 			      tbl->table | GSWIP_PCE_TBL_CTRL_OPMOD_ADWR,
 			      GSWIP_PCE_TBL_CTRL);
 
 	for (i = 0; i < ARRAY_SIZE(tbl->key); i++)
-		gswip_switch_w32(priv, tbl->key[i], GSWIP_PCE_TBL_KEY(i));
+		gswip_switch_w(priv, tbl->key[i], GSWIP_PCE_TBL_KEY(i));
 
 	for (i = 0; i < ARRAY_SIZE(tbl->val); i++)
-		gswip_switch_w32(priv, tbl->val[i], GSWIP_PCE_TBL_VAL(i));
+		gswip_switch_w(priv, tbl->val[i], GSWIP_PCE_TBL_VAL(i));
 
-	gswip_switch_w32_mask(priv, GSWIP_PCE_TBL_CTRL_ADDR_MASK | GSWIP_PCE_TBL_CTRL_OPMOD_MASK,
+	gswip_switch_mask(priv, GSWIP_PCE_TBL_CTRL_ADDR_MASK |
+				    GSWIP_PCE_TBL_CTRL_OPMOD_MASK,
 			      tbl->table | GSWIP_PCE_TBL_CTRL_OPMOD_ADWR,
 			      GSWIP_PCE_TBL_CTRL);
 
-	gswip_switch_w32(priv, tbl->mask, GSWIP_PCE_TBL_MASK);
+	gswip_switch_w(priv, tbl->mask, GSWIP_PCE_TBL_MASK);
 
-	crtl = gswip_switch_r32(priv, GSWIP_PCE_TBL_CTRL);
-	crtl &= ~(GSWIP_PCE_TBL_CTRL_TYPE | GSWIP_PCE_TBL_CTRL_VLD | GSWIP_PCE_TBL_CTRL_GMAP_MASK);
+	crtl = gswip_switch_r(priv, GSWIP_PCE_TBL_CTRL);
+	crtl &= ~(GSWIP_PCE_TBL_CTRL_TYPE | GSWIP_PCE_TBL_CTRL_VLD |
+		  GSWIP_PCE_TBL_CTRL_GMAP_MASK);
 	if (tbl->type)
 		crtl |= GSWIP_PCE_TBL_CTRL_TYPE;
 	if (tbl->valid)
 		crtl |= GSWIP_PCE_TBL_CTRL_VLD;
 	crtl |= (tbl->gmap << 7) & GSWIP_PCE_TBL_CTRL_GMAP_MASK;
 	crtl |= GSWIP_PCE_TBL_CTRL_BAS;
-	gswip_switch_w32(priv, crtl, GSWIP_PCE_TBL_CTRL);
+	gswip_switch_w(priv, crtl, GSWIP_PCE_TBL_CTRL);
 
 	gswip_wait_pce_tbl_ready(priv);
 }
 
-static int gswip_port_enable(struct dsa_switch *ds, int port, struct phy_device *phy)
+static int gswip_port_enable(struct dsa_switch *ds, int port,
+			     struct phy_device *phy)
 {
 	struct gswip_priv *priv = (struct gswip_priv *)ds->priv;
 
 	/* RMON Counter Enable for port */
-	gswip_switch_w32(priv, GSWIP_BM_PCFG_CNTEN, GSWIP_BM_PCFGp(port));
+	gswip_switch_w(priv, GSWIP_BM_PCFG_CNTEN, GSWIP_BM_PCFGp(port));
 
 	/* enable port fetch/store dma & VLAN Modification */
-	gswip_switch_w32_mask(priv, 0, GSWIP_FDMA_PCTRL_EN | GSWIP_FDMA_PCTRL_VLANMOD_BOTH, GSWIP_FDMA_PCTRLp(port));
-	gswip_switch_w32_mask(priv, 0, GSWIP_SDMA_PCTRL_EN, GSWIP_SDMA_PCTRLp(port));
-	gswip_switch_w32_mask(priv, 0, GSWIP_PCE_PCTRL_0_INGRESS, GSWIP_PCE_PCTRL_0p(port));
+	gswip_switch_mask(priv, 0, GSWIP_FDMA_PCTRL_EN |
+				       GSWIP_FDMA_PCTRL_VLANMOD_BOTH,
+			      GSWIP_FDMA_PCTRLp(port));
+	gswip_switch_mask(priv, 0, GSWIP_SDMA_PCTRL_EN,
+			      GSWIP_SDMA_PCTRLp(port));
+	gswip_switch_mask(priv, 0, GSWIP_PCE_PCTRL_0_INGRESS,
+			      GSWIP_PCE_PCTRL_0p(port));
 
 	return 0;
 }
@@ -508,32 +520,32 @@ static void gswip_port_disable(struct dsa_switch *ds, int port, struct phy_devic
 {
 	struct gswip_priv *priv = (struct gswip_priv *)ds->priv;
 
-	gswip_switch_w32_mask(priv, GSWIP_FDMA_PCTRL_EN, 0, GSWIP_FDMA_PCTRLp(port));
-	gswip_switch_w32_mask(priv, GSWIP_SDMA_PCTRL_EN, 0, GSWIP_SDMA_PCTRLp(port));
+	gswip_switch_mask(priv, GSWIP_FDMA_PCTRL_EN, 0, GSWIP_FDMA_PCTRLp(port));
+	gswip_switch_mask(priv, GSWIP_SDMA_PCTRL_EN, 0, GSWIP_SDMA_PCTRLp(port));
 }
 
 static void xrx200_pci_microcode(struct gswip_priv *priv)
 {
 	int i;
 
-	gswip_switch_w32_mask(priv, GSWIP_PCE_TBL_CTRL_ADDR_MASK | GSWIP_PCE_TBL_CTRL_OPMOD_MASK,
+	gswip_switch_mask(priv, GSWIP_PCE_TBL_CTRL_ADDR_MASK | GSWIP_PCE_TBL_CTRL_OPMOD_MASK,
 			      GSWIP_PCE_TBL_CTRL_OPMOD_ADWR, GSWIP_PCE_TBL_CTRL);
-	gswip_switch_w32(priv, 0, GSWIP_PCE_TBL_MASK);
+	gswip_switch_w(priv, 0, GSWIP_PCE_TBL_MASK);
 
 	for (i = 0; i < ARRAY_SIZE(pce_microcode); i++) {
-		gswip_switch_w32(priv, i, GSWIP_PCE_TBL_ADDR);
-		gswip_switch_w32(priv, pce_microcode[i].val[3], GSWIP_PCE_TBL_VAL(0));
-		gswip_switch_w32(priv, pce_microcode[i].val[2], GSWIP_PCE_TBL_VAL(1));
-		gswip_switch_w32(priv, pce_microcode[i].val[1], GSWIP_PCE_TBL_VAL(2));
-		gswip_switch_w32(priv, pce_microcode[i].val[0], GSWIP_PCE_TBL_VAL(3));
+		gswip_switch_w(priv, i, GSWIP_PCE_TBL_ADDR);
+		gswip_switch_w(priv, pce_microcode[i].val[3], GSWIP_PCE_TBL_VAL(0));
+		gswip_switch_w(priv, pce_microcode[i].val[2], GSWIP_PCE_TBL_VAL(1));
+		gswip_switch_w(priv, pce_microcode[i].val[1], GSWIP_PCE_TBL_VAL(2));
+		gswip_switch_w(priv, pce_microcode[i].val[0], GSWIP_PCE_TBL_VAL(3));
 
 		// start the table access:
-		gswip_switch_w32_mask(priv, 0, GSWIP_PCE_TBL_CTRL_BAS, GSWIP_PCE_TBL_CTRL);
+		gswip_switch_mask(priv, 0, GSWIP_PCE_TBL_CTRL_BAS, GSWIP_PCE_TBL_CTRL);
 		gswip_wait_pce_tbl_ready(priv);
 	}
 
 	/* tell the switch that the microcode is loaded */
-	gswip_switch_w32_mask(priv, 0, GSWIP_PCE_GCTRL_0_MC_VALID, GSWIP_PCE_GCTRL_0);
+	gswip_switch_mask(priv, 0, GSWIP_PCE_GCTRL_0_MC_VALID, GSWIP_PCE_GCTRL_0);
 }
 
 static int gswip_setup(struct dsa_switch *ds)
@@ -541,39 +553,39 @@ static int gswip_setup(struct dsa_switch *ds)
 	struct gswip_priv *priv = ds->priv;
 	int i;
 
-	gswip_switch_w32(priv, GSWIP_ETHSW_SWRES_R0, GSWIP_ETHSW_SWRES);
+	gswip_switch_w(priv, GSWIP_ETHSW_SWRES_R0, GSWIP_ETHSW_SWRES);
 	msleep(10);
-	gswip_switch_w32(priv, 0, GSWIP_ETHSW_SWRES);
+	gswip_switch_w(priv, 0, GSWIP_ETHSW_SWRES);
 
 	/* disable port fetch/store dma, assume CPU port is last port */
 	for (i = 0; i <= priv->cpu_port; i++ )
 		gswip_port_disable(ds, i, NULL);
 
 	/* enable Switch */
-	gswip_mdio_w32_mask(priv, 0, GSWIP_MDIO_GLOB_ENABLE, GSWIP_MDIO_GLOB);
+	gswip_mdio_mask(priv, 0, GSWIP_MDIO_GLOB_ENABLE, GSWIP_MDIO_GLOB);
 
 	xrx200_pci_microcode(priv);
 
 	/* Default unknown Broadcat/Multicast/Unicast port maps */
-	gswip_switch_w32(priv, BIT(priv->cpu_port), GSWIP_PCE_PMAP1);
-	gswip_switch_w32(priv, BIT(priv->cpu_port), GSWIP_PCE_PMAP2);
-	gswip_switch_w32(priv, BIT(priv->cpu_port), GSWIP_PCE_PMAP3);
+	gswip_switch_w(priv, BIT(priv->cpu_port), GSWIP_PCE_PMAP1);
+	gswip_switch_w(priv, BIT(priv->cpu_port), GSWIP_PCE_PMAP2);
+	gswip_switch_w(priv, BIT(priv->cpu_port), GSWIP_PCE_PMAP3);
 
 	/* disable auto polling */
-	gswip_mdio_w32(priv, 0x0, GSWIP_MDIO_MDC_CFG0);
+	gswip_mdio_w(priv, 0x0, GSWIP_MDIO_MDC_CFG0);
 
 	/* enable special tag insertion on cpu port */
-	gswip_switch_w32_mask(priv, 0, GSWIP_FDMA_PCTRL_STEN, GSWIP_FDMA_PCTRLp(priv->cpu_port));
+	gswip_switch_mask(priv, 0, GSWIP_FDMA_PCTRL_STEN, GSWIP_FDMA_PCTRLp(priv->cpu_port));
 
-	gswip_switch_w32_mask(priv, 0, GSWIP_MAC_CTRL_2_MLEN, GSWIP_MAC_CTRL_2p(priv->cpu_port));
-	gswip_switch_w32(priv, VLAN_ETH_FRAME_LEN + 8, GSWIP_MAC_FLEN);
-	gswip_switch_w32_mask(priv, 0, GSWIP_BM_QUEUE_GCTRL_GL_MOD, GSWIP_BM_QUEUE_GCTRL);
+	gswip_switch_mask(priv, 0, GSWIP_MAC_CTRL_2_MLEN, GSWIP_MAC_CTRL_2p(priv->cpu_port));
+	gswip_switch_w(priv, VLAN_ETH_FRAME_LEN + 8, GSWIP_MAC_FLEN);
+	gswip_switch_mask(priv, 0, GSWIP_BM_QUEUE_GCTRL_GL_MOD, GSWIP_BM_QUEUE_GCTRL);
 
 	/* VLAN aware Switching */
-	gswip_switch_w32_mask(priv, 0, GSWIP_PCE_GCTRL_0_VLAN, GSWIP_PCE_GCTRL_0);
+	gswip_switch_mask(priv, 0, GSWIP_PCE_GCTRL_0_VLAN, GSWIP_PCE_GCTRL_0);
 
 	/* Mac Address Table Lock */
-	gswip_switch_w32_mask(priv, 0, GSWIP_PCE_GCTRL_1_MAC_GLOCK | GSWIP_PCE_GCTRL_1_MAC_GLOCK_MOD, GSWIP_PCE_GCTRL_1);
+	gswip_switch_mask(priv, 0, GSWIP_PCE_GCTRL_1_MAC_GLOCK | GSWIP_PCE_GCTRL_1_MAC_GLOCK_MOD, GSWIP_PCE_GCTRL_1);
 
 	gswip_port_enable(ds, priv->cpu_port, NULL);
 	return 0;
@@ -592,7 +604,7 @@ static void gswip_adjust_link(struct dsa_switch *ds, int port, struct phy_device
 	if (port >= priv->cpu_port)
 		return;
 
-	miimode = gswip_mdio_r32(priv, GSWIP_MII_CFGp(port)) & GSWIP_MII_CFG_MODE_MASK;
+	miimode = gswip_mdio_r(priv, GSWIP_MII_CFGp(port)) & GSWIP_MII_CFG_MODE_MASK;
 
 	switch (phydev->speed) {
 	case SPEED_1000:
@@ -650,8 +662,8 @@ static void gswip_adjust_link(struct dsa_switch *ds, int port, struct phy_device
 	else
 		phyaddr |= GSWIP_MDIO_PHY_FCONRX_DIS;
 
-	gswip_mdio_w32_mask(priv, GSWIP_MDIO_PHY_MASK, phyaddr, GSWIP_MDIO_PHYp(port));
-	gswip_mii_w32_mask(priv, GSWIP_MII_CFG_RATE_MASK, miirate, GSWIP_MII_CFGp(port));
+	gswip_mdio_mask(priv, GSWIP_MDIO_PHY_MASK, phyaddr, GSWIP_MDIO_PHYp(port));
+	gswip_mii_mask(priv, GSWIP_MII_CFG_RATE_MASK, miirate, GSWIP_MII_CFGp(port));
 }
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,15,0)
@@ -671,7 +683,7 @@ static void gswip_stp_state_set(struct dsa_switch *ds, int port, u8 state)
 
 	switch (state) {
 	case BR_STATE_DISABLED:
-		gswip_switch_w32_mask(priv, GSWIP_SDMA_PCTRL_EN, 0, GSWIP_SDMA_PCTRLp(port));
+		gswip_switch_mask(priv, GSWIP_SDMA_PCTRL_EN, 0, GSWIP_SDMA_PCTRLp(port));
 		return;
 	case BR_STATE_BLOCKING:
 	case BR_STATE_LISTENING:
@@ -686,8 +698,8 @@ static void gswip_stp_state_set(struct dsa_switch *ds, int port, u8 state)
 		break;
 	}
 
-	gswip_switch_w32_mask(priv, 0, GSWIP_SDMA_PCTRL_EN, GSWIP_SDMA_PCTRLp(port));
-	gswip_switch_w32_mask(priv, GSWIP_PCE_PCTRL_0_PSTATE_MASK, stp_state, GSWIP_PCE_PCTRL_0p(port));
+	gswip_switch_mask(priv, 0, GSWIP_SDMA_PCTRL_EN, GSWIP_SDMA_PCTRLp(port));
+	gswip_switch_mask(priv, GSWIP_PCE_PCTRL_0_PSTATE_MASK, stp_state, GSWIP_PCE_PCTRL_0p(port));
 }
 
 static struct gswip_vlan *gswip_vlan_entry(struct gswip_priv *priv, int vlan)
@@ -838,16 +850,16 @@ static u32 gswip_bcm_ram_entry_read(struct gswip_priv *priv, u32 table, u32 inde
 {
 	u32 result;
 
-	gswip_switch_w32(priv, index, GSWIP_BM_RAM_ADDR);
-	gswip_switch_w32_mask(priv, GSWIP_BM_RAM_CTRL_ADDR_MASK | GSWIP_BM_RAM_CTRL_OPMOD,
+	gswip_switch_w(priv, index, GSWIP_BM_RAM_ADDR);
+	gswip_switch_mask(priv, GSWIP_BM_RAM_CTRL_ADDR_MASK | GSWIP_BM_RAM_CTRL_OPMOD,
 			      table | GSWIP_BM_RAM_CTRL_BAS,
 			      GSWIP_BM_RAM_CTRL);
 
-	while (gswip_switch_r32(priv, GSWIP_BM_RAM_CTRL) & GSWIP_BM_RAM_CTRL_BAS)
+	while (gswip_switch_r(priv, GSWIP_BM_RAM_CTRL) & GSWIP_BM_RAM_CTRL_BAS)
 		cond_resched();
 
-	result = gswip_switch_r32(priv, GSWIP_BM_RAM_VAL(0));
-	result |= gswip_switch_r32(priv, GSWIP_BM_RAM_VAL(1)) << 16;
+	result = gswip_switch_r(priv, GSWIP_BM_RAM_VAL(0));
+	result |= gswip_switch_r(priv, GSWIP_BM_RAM_VAL(1)) << 16;
 
 	return result;
 }
@@ -959,7 +971,7 @@ static int gswip_remove(struct platform_device *pdev)
 		return 0;
 
 	/* disable the switch */
-	gswip_mdio_w32_mask(priv, GSWIP_MDIO_GLOB_ENABLE, 0, GSWIP_MDIO_GLOB);
+	gswip_mdio_mask(priv, GSWIP_MDIO_GLOB_ENABLE, 0, GSWIP_MDIO_GLOB);
 
 	dsa_unregister_switch(priv->ds);
 
