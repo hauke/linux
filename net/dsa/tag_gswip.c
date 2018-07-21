@@ -1,16 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * Intel / Lantiq GSWIP tag support
  *
  * Copyright (C) 2017 - 2018 Hauke Mehrtens <hauke@hauke-m.de>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
  */
 
 #include <linux/bitops.h>
@@ -67,7 +59,8 @@
 #define GSWIP_RX_SPPID_MASK		GENMASK(6, 4)
 
 
-static struct sk_buff *gswip_tag_xmit(struct sk_buff *skb, struct net_device *dev)
+static struct sk_buff *gswip_tag_xmit(struct sk_buff *skb,
+				      struct net_device *dev)
 {
 	struct dsa_port *dp = dsa_slave_to_port(dev);
 	int err;
@@ -89,7 +82,9 @@ static struct sk_buff *gswip_tag_xmit(struct sk_buff *skb, struct net_device *de
 	return skb;
 }
 
-static struct sk_buff *gswip_tag_rcv(struct sk_buff *skb, struct net_device *dev, struct packet_type *pt)
+static struct sk_buff *gswip_tag_rcv(struct sk_buff *skb,
+				     struct net_device *dev,
+				     struct packet_type *pt)
 {
 	int port;
 	u8 *gswip_tag;

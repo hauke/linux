@@ -1,20 +1,10 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
- *   This program is free software; you can redistribute it and/or modify it
- *   under the terms of the GNU General Public License version 2 as published
- *   by the Free Software Foundation.
+ * Lantiq / Intel PMAC driver for VRX200 SoCs
  *
- *   This program is distributed in the hope that it will be useful,
- *   but WITHOUT ANY WARRANTY; without even the implied warranty of
- *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *   GNU General Public License for more details.
- *
- *   You should have received a copy of the GNU General Public License
- *   along with this program; if not, write to the Free Software
- *   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307, USA.
- *
- *   Copyright (C) 2010 Lantiq Deutschland
- *   Copyright (C) 2012 John Crispin <blogic@openwrt.org>
- *   Copyright (C) 2017 - 2018 Hauke Mehrtens <hauke@hauke-m.de>
+ * Copyright (C) 2010 Lantiq Deutschland
+ * Copyright (C) 2012 John Crispin <blogic@openwrt.org>
+ * Copyright (C) 2017 - 2018 Hauke Mehrtens <hauke@hauke-m.de>
  */
 
 #include <linux/etherdevice.h>
@@ -22,7 +12,7 @@
 #include <linux/platform_device.h>
 #include <linux/interrupt.h>
 #include <linux/clk.h>
-#include <asm/delay.h>
+#include <linux/delay.h>
 
 #include <linux/of_net.h>
 #include <linux/of_platform.h>
@@ -214,7 +204,7 @@ static int xrx200_hw_receive(struct xrx200_chan *ch)
 
 	if (ret) {
 		netdev_err(priv->net_dev,
-			"failed to allocate new rx buffer\n");
+			   "failed to allocate new rx buffer\n");
 		return ret;
 	}
 
@@ -224,7 +214,7 @@ static int xrx200_hw_receive(struct xrx200_chan *ch)
 	netif_receive_skb(skb);
 	priv->stats.rx_packets++;
 	priv->stats.rx_bytes += len;
-	
+
 	return 0;
 }
 
@@ -237,6 +227,7 @@ static int xrx200_poll_rx(struct napi_struct *napi, int budget)
 
 	while (rx < budget) {
 		struct ltq_dma_desc *desc = &ch->dma.desc_base[ch->dma.desc];
+
 		if ((desc->ctl & (LTQ_DMA_OWN | LTQ_DMA_C)) == LTQ_DMA_C) {
 			ret = xrx200_hw_receive(ch);
 			if (ret)
@@ -257,7 +248,7 @@ static int xrx200_poll_rx(struct napi_struct *napi, int budget)
 
 static void xrx200_tx_housekeeping(unsigned long ptr)
 {
-	struct xrx200_chan *ch = (struct xrx200_chan *) ptr;
+	struct xrx200_chan *ch = (struct xrx200_chan *)ptr;
 	int pkts = 0;
 	int bytes = 0;
 
@@ -271,7 +262,7 @@ static void xrx200_tx_housekeeping(unsigned long ptr)
 		ch->skb[ch->tx_free] = NULL;
 		dev_kfree_skb(skb);
 		memset(&ch->dma.desc_base[ch->tx_free], 0,
-			sizeof(struct ltq_dma_desc));
+		       sizeof(struct ltq_dma_desc));
 		ch->tx_free++;
 		ch->tx_free %= LTQ_DESC_NUM;
 	}
@@ -326,6 +317,7 @@ static int xrx200_start_xmit(struct sk_buff *skb, struct net_device *dev)
 		goto err_drop;
 
 	desc->addr = mapping - byte_offset;
+	/* Make sure the address is written before we give it to HW */
 	wmb();
 	desc->ctl = LTQ_DMA_OWN | LTQ_DMA_SOP | LTQ_DMA_EOP |
 		LTQ_DMA_TX_OFFSET(byte_offset) | (len & LTQ_DMA_SIZE_MASK);
@@ -406,7 +398,7 @@ static int xrx200_dma_init(struct xrx200_priv *priv)
 	ret = devm_request_irq(priv->dev, ch_rx->dma.irq, xrx200_dma_irq_rx, 0,
 			       "vrx200_rx", priv);
 	if (ret) {
-		dev_err(priv->dev,"net-xrx200: failed to request irq %d\n",
+		dev_err(priv->dev, "net-xrx200: failed to request irq %d\n",
 			ch_rx->dma.irq);
 		goto rx_ring_free;
 	}
@@ -487,7 +479,7 @@ static int xrx200_probe(struct platform_device *pdev)
 
 	priv->pmac_reg = devm_ioremap_resource(dev, res);
 	if (!priv->pmac_reg) {
-		dev_err(dev, "failed to request and remap io ranges \n");
+		dev_err(dev, "failed to request and remap io ranges\n");
 		return -ENOMEM;
 	}
 
@@ -511,7 +503,7 @@ static int xrx200_probe(struct platform_device *pdev)
 		phy_np = it.node;
 		if (phy_np) {
 			struct platform_device *phy = of_find_device_by_node(phy_np);
-	
+
 			of_node_put(phy_np);
 			if (!platform_get_drvdata(phy))
 				return -EPROBE_DEFER;
