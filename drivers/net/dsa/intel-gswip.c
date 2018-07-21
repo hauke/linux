@@ -1,20 +1,10 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
- *   This program is free software; you can redistribute it and/or modify it
- *   under the terms of the GNU General Public License version 2 as published
- *   by the Free Software Foundation.
+ * Lantiq / Intel GSWIP switch driver for VRX200 SoCs
  *
- *   This program is distributed in the hope that it will be useful,
- *   but WITHOUT ANY WARRANTY; without even the implied warranty of
- *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *   GNU General Public License for more details.
- *
- *   You should have received a copy of the GNU General Public License
- *   along with this program; if not, write to the Free Software
- *   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307, USA.
- *
- *   Copyright (C) 2010 Lantiq Deutschland
- *   Copyright (C) 2012 John Crispin <blogic@openwrt.org>
- *   Copyright (C) 2017 - 2018 Hauke Mehrtens <hauke@hauke-m.de>
+ * Copyright (C) 2010 Lantiq Deutschland
+ * Copyright (C) 2012 John Crispin <blogic@openwrt.org>
+ * Copyright (C) 2017 - 2018 Hauke Mehrtens <hauke@hauke-m.de>
  */
 
 #include <linux/etherdevice.h>
@@ -53,36 +43,30 @@
 #define GSWIP_MDIO_PHYp(p)		(0x15 - (p))
 #define  GSWIP_MDIO_PHY_LINK_DOWN	0x4000
 #define  GSWIP_MDIO_PHY_LINK_UP		0x2000
-
 #define  GSWIP_MDIO_PHY_SPEED_M10	0x0000
 #define  GSWIP_MDIO_PHY_SPEED_M100	0x0800
 #define  GSWIP_MDIO_PHY_SPEED_G1	0x1000
-
 #define  GSWIP_MDIO_PHY_FDUP_EN		0x0200
 #define  GSWIP_MDIO_PHY_FDUP_DIS	0x0600
-
 #define  GSWIP_MDIO_PHY_FCONTX_EN	0x0100
 #define  GSWIP_MDIO_PHY_FCONTX_DIS	0x0180
-
 #define  GSWIP_MDIO_PHY_FCONRX_EN	0x0020
 #define  GSWIP_MDIO_PHY_FCONRX_DIS	0x0060
-
 #define  GSWIP_MDIO_PHY_LINK_MASK	0x6000
 #define  GSWIP_MDIO_PHY_SPEED_MASK	0x1800
 #define  GSWIP_MDIO_PHY_FDUP_MASK	0x0600
 #define  GSWIP_MDIO_PHY_FCONTX_MASK	0x0180
 #define  GSWIP_MDIO_PHY_FCONRX_MASK	0x0060
 #define  GSWIP_MDIO_PHY_ADDR_MASK	0x001f
-#define  GSWIP_MDIO_PHY_MASK		GSWIP_MDIO_PHY_ADDR_MASK | \
-					GSWIP_MDIO_PHY_FCONRX_MASK | \
-					GSWIP_MDIO_PHY_FCONTX_MASK | \
-					GSWIP_MDIO_PHY_LINK_MASK | \
-					GSWIP_MDIO_PHY_SPEED_MASK | \
-					GSWIP_MDIO_PHY_FDUP_MASK
-
+#define  GSWIP_MDIO_PHY_MASK		(GSWIP_MDIO_PHY_ADDR_MASK | \
+					 GSWIP_MDIO_PHY_FCONRX_MASK | \
+					 GSWIP_MDIO_PHY_FCONTX_MASK | \
+					 GSWIP_MDIO_PHY_LINK_MASK | \
+					 GSWIP_MDIO_PHY_SPEED_MASK | \
+					 GSWIP_MDIO_PHY_FDUP_MASK)
 
 /* GSWIP MII Registers */
-#define GSWIP_MII_CFGp(p)		(p * 2)
+#define GSWIP_MII_CFGp(p)		((p) * 2)
 #define  GSWIP_MII_CFG_EN		BIT(14)
 #define  GSWIP_MII_CFG_MODE_MIIP	0x0
 #define  GSWIP_MII_CFG_MODE_MIIM	0x1
@@ -96,7 +80,6 @@
 #define  GSWIP_MII_CFG_RATE_M50	0x30
 #define  GSWIP_MII_CFG_RATE_AUTO	0x40
 #define  GSWIP_MII_CFG_RATE_MASK	0x70
-
 
 /* GSWIP Core Registers */
 #define GSWIP_ETHSW_SWRES		0x000
@@ -112,11 +95,11 @@
 #define GSWIP_BM_QUEUE_GCTRL		0x04A
 #define  GSWIP_BM_QUEUE_GCTRL_GL_MOD	BIT(10)
 /* buffer management Port Configuration Register */
-#define GSWIP_BM_PCFGp(p)		(0x080 + (p * 2))
+#define GSWIP_BM_PCFGp(p)		(0x080 + ((p) * 2))
 #define  GSWIP_BM_PCFG_CNTEN		BIT(0)	/* RMON Counter Enable */
 #define  GSWIP_BM_PCFG_IGCNT		BIT(1)	/* Ingres Special Tag RMON count */
 /* buffer management Port Control Register */
-#define GSWIP_BM_RMON_CTRLp(p)		(0x81 + (p * 2))
+#define GSWIP_BM_RMON_CTRLp(p)		(0x81 + ((p) * 2))
 #define  GSWIP_BM_CTRL_RMON_RAM1_RES	BIT(0)	/* Software Reset for RMON RAM 1 */
 #define  GSWIP_BM_CTRL_RMON_RAM2_RES	BIT(1)	/* Software Reset for RMON RAM 2 */
 
@@ -146,24 +129,24 @@
 #define GSWIP_PCE_GCTRL_1		0x457
 #define  GSWIP_PCE_GCTRL_1_MAC_GLOCK	BIT(2)	/* MAC Address table lock */
 #define  GSWIP_PCE_GCTRL_1_MAC_GLOCK_MOD	BIT(3) /* Mac address table lock forwarding mode */
-#define GSWIP_PCE_PCTRL_0p(p)		(0x480 + (p * 0xA))
+#define GSWIP_PCE_PCTRL_0p(p)		(0x480 + ((p) * 0xA))
 #define  GSWIP_PCE_PCTRL_0_INGRESS	BIT(11)
 #define  GSWIP_PCE_PCTRL_0_PSTATE_LISTEN	0x0
 #define  GSWIP_PCE_PCTRL_0_PSTATE_RX		0x1
 #define  GSWIP_PCE_PCTRL_0_PSTATE_TX		0x2
-#define  GSWIP_PCE_PCTRL_0_PSTATE_LEARNING 	0x3
-#define  GSWIP_PCE_PCTRL_0_PSTATE_FORWARDING 	0x7
-#define  GSWIP_PCE_PCTRL_0_PSTATE_MASK 	GENMASK(2,0)
+#define  GSWIP_PCE_PCTRL_0_PSTATE_LEARNING	0x3
+#define  GSWIP_PCE_PCTRL_0_PSTATE_FORWARDING	0x7
+#define  GSWIP_PCE_PCTRL_0_PSTATE_MASK	GENMASK(2, 0)
 
 #define GSWIP_MAC_FLEN			0x8C5
-#define GSWIP_MAC_CTRL_2p(p)		(0x905 + (p * 0xC))
+#define GSWIP_MAC_CTRL_2p(p)		(0x905 + ((p) * 0xC))
 #define GSWIP_MAC_CTRL_2_MLEN		BIT(3) /* Maximum Untagged Frame Lnegth */
 
 /* Ethernet Switch Fetch DMA Port Control Register */
 #define GSWIP_FDMA_PCTRLp(p)		(0xA80 + ((p) * 0x6))
 #define  GSWIP_FDMA_PCTRL_EN		BIT(0)	/* FDMA Port Enable */
 #define  GSWIP_FDMA_PCTRL_STEN		BIT(1)	/* Special Tag Insertion Enable */
-#define  GSWIP_FDMA_PCTRL_VLANMOD_MASK	GENMASK(4,3)	/* VLAN Modification Control */
+#define  GSWIP_FDMA_PCTRL_VLANMOD_MASK	GENMASK(4, 3)	/* VLAN Modification Control */
 #define  GSWIP_FDMA_PCTRL_VLANMOD_SHIFT	3	/* VLAN Modification Control */
 #define  GSWIP_FDMA_PCTRL_VLANMOD_DIS	(0x0 << GSWIP_FDMA_PCTRL_VLANMOD_SHIFT)
 #define  GSWIP_FDMA_PCTRL_VLANMOD_PRIO	(0x1 << GSWIP_FDMA_PCTRL_VLANMOD_SHIFT)
@@ -175,7 +158,6 @@
 #define  GSWIP_SDMA_PCTRL_EN		BIT(0)	/* SDMA Port Enable */
 #define  GSWIP_SDMA_PCTRL_FCEN		BIT(1)	/* Flow Control Enable */
 #define  GSWIP_SDMA_PCTRL_PAUFWD	BIT(1)	/* Pause Frame Forwarding */
-
 
 struct gswip_vlan {
 	struct net_device *bridge;
@@ -199,7 +181,7 @@ struct gswip_priv {
 struct gswip_rmon_cnt_desc {
 	unsigned int size;
 	unsigned int offset;
-	const char* name;
+	const char *name;
 };
 
 #define MIB_DESC(_size, _offset, _name) {.size = _size, .offset = _offset, .name = _name}
@@ -343,10 +325,11 @@ static void gswip_mii_mask(struct gswip_priv *priv, u32 clear, u32 set,
 
 static int xrx200_mdio_poll(struct gswip_priv *priv)
 {
-	unsigned cnt = 10000;
+	int cnt = 10000;
 
 	while (likely(cnt--)) {
-		unsigned ctrl = gswip_mdio_r(priv, GSWIP_MDIO_CTRL);
+		u32 ctrl = gswip_mdio_r(priv, GSWIP_MDIO_CTRL);
+
 		if ((ctrl & GSWIP_MDIO_CTRL_BUSY) == 0)
 			return 0;
 		cpu_relax();
@@ -410,7 +393,7 @@ static int gswip_mdio(struct gswip_priv *priv, struct device_node *mdio_np)
 
 struct xrx200_pce_table_entry {
 	u16 index;	// PCE_TBL_ADDR.ADDR = pData->table_index
-	u16 table; 	// PCE_TBL_CTRL.ADDR = pData->table
+	u16 table;	// PCE_TBL_CTRL.ADDR = pData->table
 	u16 key[8];
 	u16 val[5];
 	u16 mask;
@@ -426,7 +409,7 @@ static void gswip_wait_pce_tbl_ready(struct gswip_priv *priv)
 }
 
 static void xrx200_pce_table_entry_read(struct gswip_priv *priv,
-				        struct xrx200_pce_table_entry *tbl)
+					struct xrx200_pce_table_entry *tbl)
 {
 	int i;
 	u16 crtl;
@@ -566,11 +549,11 @@ static int gswip_setup(struct dsa_switch *ds)
 	int i;
 
 	gswip_switch_w(priv, GSWIP_ETHSW_SWRES_R0, GSWIP_ETHSW_SWRES);
-	msleep(10);
+	usleep_range(5000, 10000);
 	gswip_switch_w(priv, 0, GSWIP_ETHSW_SWRES);
 
 	/* disable port fetch/store dma, assume CPU port is last port */
-	for (i = 0; i <= priv->cpu_port; i++ )
+	for (i = 0; i <= priv->cpu_port; i++)
 		gswip_port_disable(ds, i, NULL);
 
 	/* enable Switch */
@@ -578,7 +561,7 @@ static int gswip_setup(struct dsa_switch *ds)
 
 	xrx200_pci_microcode(priv);
 
-	/* Default unknown Broadcat/Multicast/Unicast port maps */
+	/* Default unknown Broadcast/Multicast/Unicast port maps */
 	gswip_switch_w(priv, BIT(priv->cpu_port), GSWIP_PCE_PMAP1);
 	gswip_switch_w(priv, BIT(priv->cpu_port), GSWIP_PCE_PMAP2);
 	gswip_switch_w(priv, BIT(priv->cpu_port), GSWIP_PCE_PMAP3);
@@ -687,7 +670,7 @@ static void gswip_adjust_link(struct dsa_switch *ds, int port,
 		       GSWIP_MII_CFGp(port));
 }
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,15,0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 15, 0)
 static enum dsa_tag_protocol gswip_get_tag_protocol(struct dsa_switch *ds,
 						    int port)
 #else
@@ -737,16 +720,16 @@ static struct gswip_vlan *gswip_vlan_entry(struct gswip_priv *priv, int vlan)
 	return NULL;
 }
 
-/*
- * The switch has a table with the active VLANs (XRX200_PCE_ACTVLAN_IDX)
+/* The switch has a table with the active VLANs (XRX200_PCE_ACTVLAN_IDX)
  * with 64 possible entries and an other table (XRX200_PCE_VLANMAP_IDX)
  * where ports can be added to such an VLAN.
  * The driver first searches if there is already an entry for this bridge
  * and if not it searches for a free index and a unused VLAN and add a new
- * VLAN entry.  At the end this port will be added to the VLAN map. */
+ * VLAN entry.  At the end this port will be added to the VLAN map.
+ */
 static int
 gswip_port_bridge_join(struct dsa_switch *ds, int port,
-			struct net_device *bridge)
+		       struct net_device *bridge)
 {
 	struct gswip_priv *priv = ds->priv;
 	struct gswip_vlan *vlan_entry = NULL;
@@ -764,7 +747,8 @@ gswip_port_bridge_join(struct dsa_switch *ds, int port,
 
 	/* Find a VLAN ID in the switch from 1000 to 1064 which is not
 	 * used by trying all the 64 VLAN IDs and then checking all the
-	 * 64 possible positions. The range was choose randomly. */
+	 * 64 possible positions. The range was choose randomly.
+	 */
 	if (!vlan_entry) {
 		for (vlan = 1000; vlan < 1064; vlan++) {
 			/* check if the VLAN is used */
@@ -972,7 +956,7 @@ static int gswip_probe(struct platform_device *pdev)
 
 	/* bring up the mdio bus */
 	mdio_np = of_find_compatible_node(pdev->dev.of_node, NULL,
-				"lantiq,xrx200-mdio");
+					  "lantiq,xrx200-mdio");
 	if (mdio_np) {
 		err = gswip_mdio(priv, mdio_np);
 		if (err) {

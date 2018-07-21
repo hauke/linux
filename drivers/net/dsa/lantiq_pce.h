@@ -1,24 +1,12 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
- *   This program is free software; you can redistribute it and/or modify it
- *   under the terms of the GNU General Public License version 2 as published
- *   by the Free Software Foundation.
+ * PCE microcode extracted from UGW 7.1.1 switch api
  *
- *   This program is distributed in the hope that it will be useful,
- *   but WITHOUT ANY WARRANTY; without even the implied warranty of
- *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *   GNU General Public License for more details.
- *
- *   You should have received a copy of the GNU General Public License
- *   along with this program; if not, write to the Free Software
- *   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307, USA.
- *
- *   Copyright (C) 2010 Lantiq Deutschland GmbH
- *   Copyright (C) 2012 John Crispin <blogic@openwrt.org>
- *
- *   PCE microcode extracted from UGW7.1.1 switch api
+ * Copyright (c) 2012, 2014, 2015 Lantiq Deutschland GmbH
+ * Copyright (C) 2012 John Crispin <blogic@openwrt.org>
+ * Copyright (C) 2017 - 2018 Hauke Mehrtens <hauke@hauke-m.de>
  */
 
-/* GSWIP_2.X*/
 enum {
 	OUT_MAC0 = 0,
 	OUT_MAC1,
@@ -94,8 +82,8 @@ struct gswip_pce_microcode {
 };
 
 #define MC_ENTRY(val, msk, ns, out, len, type, flags, ipv4_len) \
-	{ val, msk, (ns<<10 | out<<4 | len>>1),\
-		(len&1)<<15 | type<<13 | flags<<9 | ipv4_len<<8 }
+	{ val, msk, (ns << 10 | out << 4 | len >> 1),\
+		(len & 1) << 15 | type << 13 | flags << 9 | ipv4_len << 8 }
 static const struct gswip_pce_microcode gswip_pce_microcode[] = {
 	/*      value    mask    ns  fields      L  type     flags       ipv4_len */
 	MC_ENTRY(0x88c3, 0xFFFF,  1, OUT_ITAG0,  4, INSTR,   FLAG_ITAG,  0),
