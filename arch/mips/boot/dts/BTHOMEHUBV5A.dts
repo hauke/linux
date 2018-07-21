@@ -117,42 +117,58 @@
 };
 
 &eth0 {
-	lan: interface@0 {
-		compatible = "lantiq,xrx200-pdi";
+	fixed-link {
+		speed = <1000>;
+		full-duplex;
+	};
+};
+
+&gswip {
+	dsa,member = <0 0>;
+
+	ports {
 		#address-cells = <1>;
 		#size-cells = <0>;
-		reg = <0>;
-		lantiq,switch;
 
-		ethernet@0 {
-			compatible = "lantiq,xrx200-pdi-port";
+		port@0 {
 			reg = <0>;
+			label = "lan3";
 			phy-mode = "rgmii";
 			phy-handle = <&phy0>;
 		};
-		ethernet@1 {
-			compatible = "lantiq,xrx200-pdi-port";
+
+		port@1 {
 			reg = <1>;
+			label = "lan4";
 			phy-mode = "rgmii";
 			phy-handle = <&phy1>;
 		};
-		ethernet@2 {
-			compatible = "lantiq,xrx200-pdi-port";
+
+		port@2 {
 			reg = <2>;
-			phy-mode = "gmii";
+			label = "lan2";
+			phy-mode = "internal";
 			phy-handle = <&phy11>;
 		};
-		ethernet@4 {
-			compatible = "lantiq,xrx200-pdi-port";
+
+		port@4 {
 			reg = <4>;
-			phy-mode = "gmii";
+			label = "lan1";
+			phy-mode = "internal";
 			phy-handle = <&phy13>;
 		};
-		ethernet@5 {
-			compatible = "lantiq,xrx200-pdi-port";
+
+		port@5 {
 			reg = <5>;
+			label = "wan";
 			phy-mode = "rgmii";
 			phy-handle = <&phy5>;
+		};
+
+		port@6 {
+			reg = <0x6>;
+			label = "cpu";
+			ethernet = <&eth0>;
 		};
 	};
 
@@ -164,33 +180,39 @@
 
 		phy0: ethernet-phy@0 {
 			reg = <0x0>;
-			compatible = "lantiq,phy11g", "ethernet-phy-ieee802.3-c22";
 		};
 		phy1: ethernet-phy@1 {
 			reg = <0x1>;
-			compatible = "lantiq,phy11g", "ethernet-phy-ieee802.3-c22";
 		};
 		phy5: ethernet-phy@5 {
 			reg = <0x5>;
-			compatible = "lantiq,phy11g", "ethernet-phy-ieee802.3-c22";
 		};
 		phy11: ethernet-phy@11 {
 			reg = <0x11>;
-			compatible = "lantiq,phy11g", "ethernet-phy-ieee802.3-c22";
 		};
 		phy13: ethernet-phy@13 {
 			reg = <0x13>;
-			compatible = "lantiq,phy11g", "ethernet-phy-ieee802.3-c22";
 		};
 	};
-};
+	
+	gphy-fw {
+		compatible = "lantiq,xrx200-gphy-fw", "lantiq,gphy-fw";
+		lantiq,rcu = <&rcu0>;
 
-&gphy0 {
-	lantiq,gphy-mode = <GPHY_MODE_GE>;
-};
+		gphy@20 {
+			reg = <0x20>;
 
-&gphy1 {
-	lantiq,gphy-mode = <GPHY_MODE_GE>;
+			resets = <&reset0 31 30>;
+			reset-names = "gphy";
+		};
+
+		gphy@68 {
+			reg = <0x68>;
+
+			resets = <&reset0 29 28>;
+			reset-names = "gphy";
+		};
+	};
 };
 
 &gpio {
