@@ -20,54 +20,21 @@
 #include <linux/etherdevice.h>
 #include <linux/module.h>
 #include <linux/platform_device.h>
-#include <linux/interrupt.h>
-#include <linux/clk.h>
 #include <linux/if_vlan.h>
 #include <linux/if_bridge.h>
-#include <linux/delay.h>
 #include <net/dsa.h>
 
 #include <linux/of_net.h>
 #include <linux/of_mdio.h>
-#include <linux/of_gpio.h>
 #include <linux/of_platform.h>
 #include <linux/version.h>
 
 #include "lantiq_pce.h"
 
 
-#define SW_POLLING
-#define SW_ROUTING
-
-#ifdef SW_ROUTING
-#define XRX200_MAX_DEV		2
-#else
-#define XRX200_MAX_DEV		1
-#endif
-
 #define XRX200_MAX_VLAN		64
 #define XRX200_PCE_ACTVLAN_IDX	0x01
 #define XRX200_PCE_VLANMAP_IDX	0x02
-
-#define XRX200_MAX_PORT		7
-#define XRX200_MAX_DMA		8
-
-#define XRX200_HEADROOM		4
-
-#define XRX200_TX_TIMEOUT	(10 * HZ)
-
-/* port type */
-#define XRX200_PORT_TYPE_PHY	1
-#define XRX200_PORT_TYPE_MAC	2
-
-/* DMA */
-#define XRX200_DMA_DATA_LEN	0x600
-#define XRX200_DMA_IRQ		INT_NUM_IM2_IRL0
-#define XRX200_DMA_RX		0
-#define XRX200_DMA_TX		1
-#define XRX200_DMA_TX_2		3
-#define XRX200_DMA_IS_TX(x)	(x%2)
-#define XRX200_DMA_IS_RX(x)	(!XRX200_DMA_IS_TX(x))
 
 /* fetch / store dma */
 #define FDMA_PCTRL0		0x2A00
@@ -203,24 +170,6 @@
 
 /* buffer management */
 #define BM_PCFG(p)		(0x200 + (p * 8))
-
-/* special tag in TX path header */
-#define SPID_SHIFT		24
-#define DPID_SHIFT		16
-#define DPID_ENABLE		1
-#define SPID_CPU_PORT		2
-#define PORT_MAP_SEL		BIT(15)
-#define PORT_MAP_EN		BIT(14)
-#define PORT_MAP_SHIFT		1
-#define PORT_MAP_MASK		0x3f
-
-#define SPPID_MASK		0x7
-#define SPPID_SHIFT		4
-
-/* MII regs not yet in linux */
-#define MDIO_DEVAD_NONE		(-1)
-#define ADVERTIZE_MPD		(1 << 10)
-
 
 #define GSWIP_BM_QUEUE_GCTRL		0x0128
 #define  GSWIP_BM_QUEUE_GCTRL_GL_MOD	BIT(10)
@@ -386,7 +335,6 @@ static void gswip_mii_w32_mask(struct gswip_priv *priv, u32 clear, u32 set, u32 
 	gswip_mii_w32(priv, val, offset);
 }
 
-
 static int xrx200_mdio_poll(struct gswip_priv *priv)
 {
 	unsigned cnt = 10000;
@@ -498,7 +446,7 @@ static void xrx200_pce_table_entry_read(struct gswip_priv *priv,
 
 	tbl->type = !!(crtl & PCE_TBL_CTRL_TYPE);
 	tbl->valid = !!(crtl & PCE_TBL_CTRL_VLD);
-	tbl->gmap = crtl & PCE_TBL_CTRL_GMAP_MASK >> 7;
+	tbl->gmap = (crtl & PCE_TBL_CTRL_GMAP_MASK) >> 7;
 }
 
 static void xrx200_pce_table_entry_write(struct gswip_priv *priv, struct xrx200_pce_table_entry *tbl)
@@ -568,12 +516,8 @@ static int gswip_setup(struct dsa_switch *ds)
 	int i;
 
 	gswip_switch_w32(priv, 1, 0);
-	msleep(100);
+	msleep(10);
 	gswip_switch_w32(priv, 0, 0);
-	/*
-	 * TODO: we should really disbale all phys/miis here and explicitly
-	 * enable them in the device secific init function
-	 */
 
 	/* disable port fetch/store dma */
 	for (i = 0; i < 7; i++ ) {
