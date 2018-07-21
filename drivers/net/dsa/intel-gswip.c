@@ -489,6 +489,29 @@ static void xrx200_pce_table_entry_write(struct gswip_priv *priv, struct xrx200_
 	gswip_wait_pce_tbl_ready(priv);
 }
 
+static int gswip_port_enable(struct dsa_switch *ds, int port, struct phy_device *phy)
+{
+	struct gswip_priv *priv = (struct gswip_priv *)ds->priv;
+
+	/* RMON Counter Enable for port */
+	gswip_switch_w32(priv, GSWIP_BM_PCFG_CNTEN, GSWIP_BM_PCFGp(port));
+
+	/* enable port fetch/store dma & VLAN Modification */
+	gswip_switch_w32_mask(priv, 0, GSWIP_FDMA_PCTRL_EN | GSWIP_FDMA_PCTRL_VLANMOD_BOTH, GSWIP_FDMA_PCTRLp(port));
+	gswip_switch_w32_mask(priv, 0, GSWIP_SDMA_PCTRL_EN, GSWIP_SDMA_PCTRLp(port));
+	gswip_switch_w32_mask(priv, 0, GSWIP_PCE_PCTRL_0_INGRESS, GSWIP_PCE_PCTRL_0p(port));
+
+	return 0;
+}
+
+static void gswip_port_disable(struct dsa_switch *ds, int port, struct phy_device *phy)
+{
+	struct gswip_priv *priv = (struct gswip_priv *)ds->priv;
+
+	gswip_switch_w32_mask(priv, GSWIP_FDMA_PCTRL_EN, 0, GSWIP_FDMA_PCTRLp(port));
+	gswip_switch_w32_mask(priv, GSWIP_SDMA_PCTRL_EN, 0, GSWIP_SDMA_PCTRLp(port));
+}
+
 static void xrx200_pci_microcode(struct gswip_priv *priv)
 {
 	int i;
@@ -522,11 +545,9 @@ static int gswip_setup(struct dsa_switch *ds)
 	msleep(10);
 	gswip_switch_w32(priv, 0, GSWIP_ETHSW_SWRES);
 
-	/* disable port fetch/store dma */
-	for (i = 0; i < 7; i++ ) {
-		gswip_switch_w32_mask(priv, GSWIP_FDMA_PCTRL_EN, 0, GSWIP_FDMA_PCTRLp(i));
-		gswip_switch_w32_mask(priv, GSWIP_SDMA_PCTRL_EN, 0, GSWIP_SDMA_PCTRLp(i));
-	}
+	/* disable port fetch/store dma, assume CPU port is last port */
+	for (i = 0; i <= priv->cpu_port; i++ )
+		gswip_port_disable(ds, i, NULL);
 
 	/* enable Switch */
 	gswip_mdio_w32_mask(priv, 0, GSWIP_MDIO_GLOB_ENABLE, GSWIP_MDIO_GLOB);
@@ -541,17 +562,9 @@ static int gswip_setup(struct dsa_switch *ds)
 	/* disable auto polling */
 	gswip_mdio_w32(priv, 0x0, GSWIP_MDIO_MDC_CFG0);
 
-	/* RMON Counter Enable CPU port */
-	gswip_switch_w32(priv, GSWIP_BM_PCFG_CNTEN, GSWIP_BM_PCFGp(priv->cpu_port));
-
-	/* enable port fetch/store dma & VLAN Modification */
-	gswip_switch_w32_mask(priv, 0, GSWIP_FDMA_PCTRL_EN | GSWIP_FDMA_PCTRL_VLANMOD_BOTH, GSWIP_FDMA_PCTRLp(priv->cpu_port));
-	gswip_switch_w32_mask(priv, 0, GSWIP_SDMA_PCTRL_EN, GSWIP_SDMA_PCTRLp(priv->cpu_port));
-	gswip_switch_w32_mask(priv, 0, GSWIP_PCE_PCTRL_0_INGRESS, GSWIP_PCE_PCTRL_0p(priv->cpu_port));
-
 	/* enable special tag insertion on cpu port */
 	gswip_switch_w32_mask(priv, 0, GSWIP_FDMA_PCTRL_STEN, GSWIP_FDMA_PCTRLp(priv->cpu_port));
-	gswip_switch_w32_mask(priv, 0, GSWIP_PCE_PCTRL_0_INGRESS, GSWIP_PCE_PCTRL_0p(priv->cpu_port));
+
 	gswip_switch_w32_mask(priv, 0, GSWIP_MAC_CTRL_2_MLEN, GSWIP_MAC_CTRL_2p(priv->cpu_port));
 	gswip_switch_w32(priv, VLAN_ETH_FRAME_LEN + 8, GSWIP_MAC_FLEN);
 	gswip_switch_w32_mask(priv, 0, GSWIP_BM_QUEUE_GCTRL_GL_MOD, GSWIP_BM_QUEUE_GCTRL);
@@ -561,6 +574,8 @@ static int gswip_setup(struct dsa_switch *ds)
 
 	/* Mac Address Table Lock */
 	gswip_switch_w32_mask(priv, 0, GSWIP_PCE_GCTRL_1_MAC_GLOCK | GSWIP_PCE_GCTRL_1_MAC_GLOCK_MOD, GSWIP_PCE_GCTRL_1);
+
+	gswip_port_enable(ds, priv->cpu_port, NULL);
 	return 0;
 }
 
@@ -637,29 +652,6 @@ static void gswip_adjust_link(struct dsa_switch *ds, int port, struct phy_device
 
 	gswip_mdio_w32_mask(priv, GSWIP_MDIO_PHY_MASK, phyaddr, GSWIP_MDIO_PHYp(port));
 	gswip_mii_w32_mask(priv, GSWIP_MII_CFG_RATE_MASK, miirate, GSWIP_MII_CFGp(port));
-}
-
-static int gswip_port_enable(struct dsa_switch *ds, int port, struct phy_device *phy)
-{
-	struct gswip_priv *priv = (struct gswip_priv *)ds->priv;
-
-	/* RMON Counter Enable for port */
-	gswip_switch_w32(priv, GSWIP_BM_PCFG_CNTEN, GSWIP_BM_PCFGp(port));
-
-	/* enable port fetch/store dma & VLAN Modification */
-	gswip_switch_w32_mask(priv, 0, GSWIP_FDMA_PCTRL_EN | GSWIP_FDMA_PCTRL_VLANMOD_BOTH, GSWIP_FDMA_PCTRLp(port));
-	gswip_switch_w32_mask(priv, 0, GSWIP_SDMA_PCTRL_EN, GSWIP_SDMA_PCTRLp(port));
-	gswip_switch_w32_mask(priv, 0, GSWIP_PCE_PCTRL_0_INGRESS, GSWIP_PCE_PCTRL_0p(port));
-
-	return 0;
-}
-
-static void gswip_port_disable(struct dsa_switch *ds, int port, struct phy_device *phy)
-{
-	struct gswip_priv *priv = (struct gswip_priv *)ds->priv;
-
-	gswip_switch_w32_mask(priv, GSWIP_FDMA_PCTRL_EN, 0, GSWIP_FDMA_PCTRLp(port));
-	gswip_switch_w32_mask(priv, GSWIP_SDMA_PCTRL_EN, 0, GSWIP_SDMA_PCTRLp(port));
 }
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,15,0)
