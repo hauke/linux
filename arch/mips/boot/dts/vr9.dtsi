@@ -101,6 +101,7 @@
 			gphy0: gphy@20 {
 				compatible = "lantiq,xrx200-gphy";
 				reg = <0x20 0x4>;
+				status = "disabled";
 
 				resets = <&reset0 31 30>, <&reset1 7 7>;
 				reset-names = "gphy", "gphy2";
@@ -109,6 +110,7 @@
 			gphy1: gphy@68 {
 				compatible = "lantiq,xrx200-gphy";
 				reg = <0x68 0x4>;
+				status = "disabled";
 
 				resets = <&reset0 29 28>, <&reset1 6 6>;
 				reset-names = "gphy", "gphy2";
@@ -270,20 +272,28 @@
 			phy-names = "usb2-phy";
 		};
 
-		eth0: eth@e108000 {
+		eth0: eth@E10B308 {
 			#address-cells = <1>;
 			#size-cells = <0>;
 			compatible = "lantiq,xrx200-net";
-			reg = <	0xe108000 0x3000 /* switch */
-				0xe10b100 0x70 /* mdio */
-				0xe10b1d8 0x30 /* mii */
-				0xe10b308 0x30 /* pmac */
-			>;
+			reg = <0xE10B308 0xCF8>;
 			interrupt-parent = <&icu0>;
-			interrupts = <75 73 72>;
-			resets = <&reset0 21 16>, <&reset0 8 8>;
-			reset-names = "switch", "ppe";
-			lantiq,phys = <&gphy0>, <&gphy1>;
+			interrupts = <75>, <73>, <72>;
+			interrupt-names = "tx2", "tx", "rx";
+			resets = <&reset0 21 16>, <&reset0 8 8>, <&reset0 3 3>;
+			reset-names = "switch", "ppe", "ppe_dsp";
+		};
+
+		gswip: gswip@E108000 {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			compatible = "lantiq,xrx200-gswip";
+			reg = <	0xE108000 0x3100 /* switch */
+				0xE10B100 0xD8 /* mdio */
+				0xE10B1D8 0x130 /* mii */
+				>;
+			resets = <&reset0 21 16>, <&reset0 8 8>, <&reset0 3 3>;
+			reset-names = "switch", "ppe", "ppe_dsp";
 		};
 
 		mei@e116000 {
@@ -324,7 +334,7 @@
 			bus-range = <0x0 0x0>;
 			ranges = <0x2000000 0 0x8000000 0x8000000 0 0x2000000   /* pci memory */
 				0x1000000 0 0x00000000 0xae00000 0 0x200000>; /* io space */
-			reg = <0x7000000 0x8000         /* config space */
+			reg = <0x7000000 0x8000	 	/* config space */
 				0xe105400 0x400>;       /* pci bridge */
 			lantiq,bus-clock = <33333333>;
 			interrupt-map-mask = <0xf800 0x0 0x0 0x7>;
