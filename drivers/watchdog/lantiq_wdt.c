@@ -135,11 +135,21 @@ static int ltq_wdt_ping(struct watchdog_device *wdt)
 	return 0;
 }
 
+unsigned int ltq_wdt_get_timeleft(struct watchdog_device *wdt)
+{
+	struct ltq_wdt_priv *priv = ltq_wdt_get_priv(wdt);
+	u64 timeout;
+
+	timeout = ltq_wdt_r32(priv, LTQ_WDT_SR) & LTQ_WDT_SR_VALUE_MASK;
+	return do_div(timeout, priv->clk_rate / LTQ_WDT_DIVIDER);
+}
+
 static const struct watchdog_ops ltq_wdt_ops = {
 	.owner		= THIS_MODULE,
 	.start		= ltq_wdt_start,
 	.stop		= ltq_wdt_stop,
 	.ping		= ltq_wdt_ping,
+	.get_timeleft	= ltq_wdt_get_timeleft,
 };
 
 typedef int (*ltq_wdt_bootstatus_get)(struct platform_device *pdev);
