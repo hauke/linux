@@ -36,7 +36,7 @@
 #define XRX200_PCE_ACTVLAN_IDX	0x01
 #define XRX200_PCE_VLANMAP_IDX	0x02
 
-/* MDIO */
+/* GSWIP MDIO Registers */
 #define GSWIP_MDIO_GLOB			0x0000
 #define  GSWIP_MDIO_GLOB_ENABLE		BIT(15)
 #define GSWIP_MDIO_CTRL			0x0020
@@ -80,29 +80,25 @@
 #define GSWIP_MDIO_CLK_CFG0		0x002C
 #define GSWIP_MDIO_CLK_CFG1		0x0030
 
-/* MII */
-#define MII_CFG(p)		(p * 8)
 
-#define MII_CFG_EN		BIT(14)
-
-#define MII_CFG_MODE_MIIP	0x0
-#define MII_CFG_MODE_MIIM	0x1
-#define MII_CFG_MODE_RMIIP	0x2
-#define MII_CFG_MODE_RMIIM	0x3
-#define MII_CFG_MODE_RGMII	0x4
-#define MII_CFG_MODE_MASK	0xf
-
-#define MII_CFG_RATE_M2P5	0x00
-#define MII_CFG_RATE_M25	0x10
-#define MII_CFG_RATE_M125	0x20
-#define MII_CFG_RATE_M50	0x30
-#define MII_CFG_RATE_AUTO	0x40
-#define MII_CFG_RATE_MASK	0x70
+/* GSWIP MII Registers */
+#define GSWIP_MII_CFG(p)		(p * 8)
+#define  GSWIP_MII_CFG_EN		BIT(14)
+#define  GSWIP_MII_CFG_MODE_MIIP	0x0
+#define  GSWIP_MII_CFG_MODE_MIIM	0x1
+#define  GSWIP_MII_CFG_MODE_RMIIP	0x2
+#define  GSWIP_MII_CFG_MODE_RMIIM	0x3
+#define  GSWIP_MII_CFG_MODE_RGMII	0x4
+#define  GSWIP_MII_CFG_MODE_MASK	0xf
+#define  GSWIP_MII_CFG_RATE_M2P5	0x00
+#define  GSWIP_MII_CFG_RATE_M25	0x10
+#define  GSWIP_MII_CFG_RATE_M125	0x20
+#define  GSWIP_MII_CFG_RATE_M50	0x30
+#define  GSWIP_MII_CFG_RATE_AUTO	0x40
+#define  GSWIP_MII_CFG_RATE_MASK	0x70
 
 
-
-
-
+/* GSWIP Core Registers */
 #define GSWIP_ETHSW_SWRES		0x000
 #define  GSWIP_ETHSW_SWRES_R1		BIT(1)	/* GSWIP Software reset */
 #define  GSWIP_ETHSW_SWRES_R0		BIT(0)	/* GSWIP Hardware reset */
@@ -581,30 +577,30 @@ static void gswip_adjust_link(struct dsa_switch *ds, int port, struct phy_device
 	if (port >= priv->cpu_port)
 		return;
 
-	miimode = gswip_mdio_r32(priv, MII_CFG(port)) & MII_CFG_MODE_MASK;
+	miimode = gswip_mdio_r32(priv, GSWIP_MII_CFG(port)) & GSWIP_MII_CFG_MODE_MASK;
 
 	switch (phydev->speed) {
 	case SPEED_1000:
 		phyaddr |= GSWIP_MDIO_PHY_SPEED_G1;
-		miirate = MII_CFG_RATE_M125;
+		miirate = GSWIP_MII_CFG_RATE_M125;
 		break;
 
 	case SPEED_100:
 		phyaddr |= GSWIP_MDIO_PHY_SPEED_M100;
 		switch (miimode) {
-		case MII_CFG_MODE_RMIIM:
-		case MII_CFG_MODE_RMIIP:
-			miirate = MII_CFG_RATE_M50;
+		case GSWIP_MII_CFG_MODE_RMIIM:
+		case GSWIP_MII_CFG_MODE_RMIIP:
+			miirate = GSWIP_MII_CFG_RATE_M50;
 			break;
 		default:
-			miirate = MII_CFG_RATE_M25;
+			miirate = GSWIP_MII_CFG_RATE_M25;
 			break;
 		}
 		break;
 
 	default:
 		phyaddr |= GSWIP_MDIO_PHY_SPEED_M10;
-		miirate = MII_CFG_RATE_M2P5;
+		miirate = GSWIP_MII_CFG_RATE_M2P5;
 		break;
 	}
 
@@ -640,7 +636,7 @@ static void gswip_adjust_link(struct dsa_switch *ds, int port, struct phy_device
 		phyaddr |= GSWIP_MDIO_PHY_FCONRX_DIS;
 
 	gswip_mdio_w32_mask(priv, GSWIP_MDIO_PHY_MASK, phyaddr, GSWIP_MDIO_PHY(port));
-	gswip_mii_w32_mask(priv, MII_CFG_RATE_MASK, miirate, MII_CFG(port));
+	gswip_mii_w32_mask(priv, GSWIP_MII_CFG_RATE_MASK, miirate, GSWIP_MII_CFG(port));
 }
 
 static int gswip_port_enable(struct dsa_switch *ds, int port, struct phy_device *phy)
