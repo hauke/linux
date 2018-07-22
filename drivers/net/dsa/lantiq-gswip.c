@@ -434,7 +434,7 @@ static void gswip_pci_microcode(struct gswip_priv *priv)
 		gswip_switch_w(priv, gswip_pce_microcode[i].val_3,
 			       GSWIP_PCE_TBL_VAL(3));
 
-		// start the table access:
+		/* start the table access: */
 		gswip_switch_mask(priv, 0, GSWIP_PCE_TBL_CTRL_BAS,
 				  GSWIP_PCE_TBL_CTRL);
 		gswip_wait_pce_tbl_ready(priv);
