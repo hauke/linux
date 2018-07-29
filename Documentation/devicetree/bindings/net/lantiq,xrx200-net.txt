@@ -1,0 +1,29 @@
+Lantiq xRX200 PMAC Ethernet driver
+==================================
+
+Required properties:
+
+- compatible	: "lantiq,xrx200-net" for the PMAC of the embedded
+		: GSWIP in the xXR200
+- reg		: memory range of the PMAC core inside of the GSWIP core
+- interrupts	: TX and RX DMA interrupts. Use interrupt-names "tx" for 
+		: the TX interrupt and "rx" for the RX interrupt.
+
+Optional properties:
+
+- lantiq,phys	: A list of phandles of the FW loader of the embedded
+		  Ethernet PHYs phys. This is used to make sure the
+		  firmware is loaded into the embedded PHY before this
+		  driver is loaded and accesses them over the MDIO bus.
+
+Example:
+
+eth0: eth@E10B308 {
+	#address-cells = <1>;
+	#size-cells = <0>;
+	compatible = "lantiq,xrx200-net";
+	reg = <0xE10B308 0x30>;
+	interrupts = <73>, <72>;
+	interrupt-names = "tx", "rx";
+	lantiq,phys = <&gphy0>, <&gphy1>;
+};
