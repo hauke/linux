@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- * Intel / Lantiq GSWIP tag support
+ * Intel / Lantiq GSWIP V2.0 PMAC tag support
  *
  * Copyright (C) 2017 - 2018 Hauke Mehrtens <hauke@hauke-m.de>
  */
