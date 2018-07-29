@@ -12,24 +12,20 @@
 
 #include "dsa_priv.h"
 
-
 #define GSWIP_TX_HEADER_LEN		4
 
 /* special tag in TX path header */
 /* Byte 0 */
-#define GSWIP_TX_DPID_EN		BIT(0)
-#define GSWIP_TX_PORT_MAP_SHIFT		1
-#define GSWIP_TX_PORT_MAP_MASK		GENMASK(6, 1)
+#define GSWIP_TX_SLPID_SHIFT		0	/* source port ID */
+#define  GSWIP_TX_SLPID_CPU		2
+#define  GSWIP_TX_SLPID_APP1		3
+#define  GSWIP_TX_SLPID_APP2		4
+#define  GSWIP_TX_SLPID_APP3		5
+#define  GSWIP_TX_SLPID_APP4		6
+#define  GSWIP_TX_SLPID_APP5		7
 
 /* Byte 1 */
-#define GSWIP_TX_CLASS_SHIFT		0
-#define GSWIP_TX_CLASS_MASK		GENMASK(3, 0)
-#define GSWIP_TX_CLASS_EN		BIT(4)
-#define GSWIP_TX_LRN_DIS		BIT(5)
-#define GSWIP_TX_PORT_MAP_SEL		BIT(6)
-#define GSWIP_TX_PORT_MAP_EN		BIT(7)
-
-/* Byte 2 */
+#define GSWIP_TX_CRCGEN_DIS		BIT(7)
 #define GSWIP_TX_DPID_SHIFT		0	/* destination group ID */
 #define  GSWIP_TX_DPID_ELAN		0
 #define  GSWIP_TX_DPID_EWAN		1
@@ -40,16 +36,18 @@
 #define  GSWIP_TX_DPID_APP4		6
 #define  GSWIP_TX_DPID_APP5		7
 
-/* Byte 3 */
-#define GSWIP_TX_CRCGEN_DIS		BIT(23)
-#define GSWIP_TX_SLPID_SHIFT		0	/* source port ID */
-#define  GSWIP_TX_SLPID_CPU		2
-#define  GSWIP_TX_SLPID_APP1		3
-#define  GSWIP_TX_SLPID_APP2		4
-#define  GSWIP_TX_SLPID_APP3		5
-#define  GSWIP_TX_SLPID_APP4		6
-#define  GSWIP_TX_SLPID_APP5		7
+/* Byte 2 */
+#define GSWIP_TX_PORT_MAP_EN		BIT(7)
+#define GSWIP_TX_PORT_MAP_SEL		BIT(6)
+#define GSWIP_TX_LRN_DIS		BIT(5)
+#define GSWIP_TX_CLASS_EN		BIT(4)
+#define GSWIP_TX_CLASS_SHIFT		0
+#define GSWIP_TX_CLASS_MASK		GENMASK(3, 0)
 
+/* Byte 3 */
+#define GSWIP_TX_DPID_EN		BIT(0)
+#define GSWIP_TX_PORT_MAP_SHIFT		1
+#define GSWIP_TX_PORT_MAP_MASK		GENMASK(6, 1)
 
 #define GSWIP_RX_HEADER_LEN	8
 
@@ -57,7 +55,6 @@
 /* Byte 7 */
 #define GSWIP_RX_SPPID_SHIFT		4
 #define GSWIP_RX_SPPID_MASK		GENMASK(6, 4)
-
 
 static struct sk_buff *gswip_tag_xmit(struct sk_buff *skb,
 				      struct net_device *dev)
@@ -92,7 +89,7 @@ static struct sk_buff *gswip_tag_rcv(struct sk_buff *skb,
 	if (unlikely(!pskb_may_pull(skb, GSWIP_RX_HEADER_LEN)))
 		return NULL;
 
-	gswip_tag = ((u8 *)skb->data) - ETH_HLEN;
+	gswip_tag = skb->data - ETH_HLEN;
 	skb_pull_rcsum(skb, GSWIP_RX_HEADER_LEN);
 
 	/* Get source port information */
