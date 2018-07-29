@@ -155,11 +155,16 @@
 #define  GSWIP_SDMA_PCTRL_FCEN		BIT(1)	/* Flow Control Enable */
 #define  GSWIP_SDMA_PCTRL_PAUFWD	BIT(1)	/* Pause Frame Forwarding */
 
+struct gswip_hw_info {
+	int max_ports;
+	int cpu_port;
+};
+
 struct gswip_priv {
 	__iomem void *gswip;
 	__iomem void *mdio;
 	__iomem void *mii;
-	int cpu_port;
+	struct gswip_hw_info *hw_info;
 	struct dsa_switch *ds;
 	struct device *dev;
 };
@@ -173,79 +178,42 @@ struct gswip_rmon_cnt_desc {
 #define MIB_DESC(_size, _offset, _name) {.size = _size, .offset = _offset, .name = _name}
 
 static const struct gswip_rmon_cnt_desc gswip_rmon_cnt[] = {
-	/** Receive Packet Count (only packets that are accepted and not discarded). */
 	MIB_DESC(1, 0x1F, "RxGoodPkts"),
-	/** Receive Unicast Packet Count. */
 	MIB_DESC(1, 0x23, "RxUnicastPkts"),
-	/** Receive Multicast Packet Count. */
 	MIB_DESC(1, 0x22, "RxMulticastPkts"),
-	/** Receive FCS Error Packet Count. */
 	MIB_DESC(1, 0x21, "RxFCSErrorPkts"),
-	/** Receive Undersize Good Packet Count. */
 	MIB_DESC(1, 0x1D, "RxUnderSizeGoodPkts"),
-	/** Receive Undersize Error Packet Count. */
 	MIB_DESC(1, 0x1E, "RxUnderSizeErrorPkts"),
-	/** Receive Oversize Good Packet Count. */
 	MIB_DESC(1, 0x1B, "RxOversizeGoodPkts"),
-	/** Receive Oversize Error Packet Count. */
 	MIB_DESC(1, 0x1C, "RxOversizeErrorPkts"),
-	/** Receive Good Pause Packet Count. */
 	MIB_DESC(1, 0x20, "RxGoodPausePkts"),
-	/** Receive Align Error Packet Count. */
 	MIB_DESC(1, 0x1A, "RxAlignErrorPkts"),
-	/** Receive Size 64 Packet Count. */
 	MIB_DESC(1, 0x12, "Rx64BytePkts"),
-	/** Receive Size 65-127 Packet Count. */
 	MIB_DESC(1, 0x13, "Rx127BytePkts"),
-	/** Receive Size 128-255 Packet Count. */
 	MIB_DESC(1, 0x14, "Rx255BytePkts"),
-	/** Receive Size 256-511 Packet Count. */
 	MIB_DESC(1, 0x15, "Rx511BytePkts"),
-	/** Receive Size 512-1023 Packet Count. */
 	MIB_DESC(1, 0x16, "Rx1023BytePkts"),
-	/** Receive Size 1024-1522 (or more, if configured) Packet Count. */
 	MIB_DESC(1, 0x17, "RxMaxBytePkts"),
-	/** Receive Dropped Packet Count. */
 	MIB_DESC(1, 0x18, "RxDroppedPkts"),
-	/** Filtered Packet Count. */
 	MIB_DESC(1, 0x19, "RxFilteredPkts"),
-	/** Receive Good Byte Count (64 bit). */
 	MIB_DESC(2, 0x24, "RxGoodBytes"),
-	/** Receive Bad Byte Count (64 bit). */
 	MIB_DESC(2, 0x26, "RxBadBytes"),
-	/** Transmit Dropped Packet Count, based on Congestion Management. */
 	MIB_DESC(1, 0x11, "TxAcmDroppedPkts"),
-	/** Transmit Packet Count. */
 	MIB_DESC(1, 0x0C, "TxGoodPkts"),
-	/** Transmit Unicast Packet Count. */
 	MIB_DESC(1, 0x06, "TxUnicastPkts"),
-	/** Transmit Multicast Packet Count. */
 	MIB_DESC(1, 0x07, "TxMulticastPkts"),
-	/** Transmit Size 64 Packet Count. */
 	MIB_DESC(1, 0x00, "Tx64BytePkts"),
-	/** Transmit Size 65-127 Packet Count. */
 	MIB_DESC(1, 0x01, "Tx127BytePkts"),
-	/** Transmit Size 128-255 Packet Count. */
 	MIB_DESC(1, 0x02, "Tx255BytePkts"),
-	/** Transmit Size 256-511 Packet Count. */
 	MIB_DESC(1, 0x03, "Tx511BytePkts"),
-	/** Transmit Size 512-1023 Packet Count. */
 	MIB_DESC(1, 0x04, "Tx1023BytePkts"),
-	/** Transmit Size 1024-1522 (or more, if configured) Packet Count. */
 	MIB_DESC(1, 0x05, "TxMaxBytePkts"),
-	/** Transmit Single Collision Count. */
 	MIB_DESC(1, 0x08, "TxSingleCollCount"),
-	/** Transmit Multiple Collision Count. */
 	MIB_DESC(1, 0x09, "TxMultCollCount"),
-	/** Transmit Late Collision Count. */
 	MIB_DESC(1, 0x0A, "TxLateCollCount"),
-	/** Transmit Excessive Collision Count. */
 	MIB_DESC(1, 0x0B, "TxExcessCollCount"),
-	/** Transmit Pause Packet Count. */
 	MIB_DESC(1, 0x0D, "TxPauseCount"),
-	/** Transmit Drop Packet Count. */
 	MIB_DESC(1, 0x10, "TxDroppedPkts"),
-	/** Transmit Good Byte Count (64 bit). */
 	MIB_DESC(2, 0x0E, "TxGoodBytes"),
 };
 
@@ -267,6 +235,14 @@ static void gswip_switch_mask(struct gswip_priv *priv, u32 clear, u32 set,
 	val &= ~(clear);
 	val |= set;
 	gswip_switch_w(priv, val, offset);
+}
+
+static u32 gswip_switch_r_timeout(struct gswip_priv *priv, u32 offset, cleared)
+{
+	u32 val;
+
+	return readx_poll_timeout(__raw_readl, priv->gswip + (offset * 4), val,
+				  (val & cleared) == 0, 20, 50000)
 }
 
 static u32 gswip_mdio_r(struct gswip_priv *priv, u32 offset)
@@ -321,15 +297,17 @@ static int gswip_mdio_poll(struct gswip_priv *priv)
 		cpu_relax();
 	}
 
-	return 1;
+	return -ETIMEDOUT;
 }
 
 static int gswip_mdio_wr(struct mii_bus *bus, int addr, int reg, u16 val)
 {
 	struct gswip_priv *priv = bus->priv;
+	int err;
 
-	if (gswip_mdio_poll(priv))
-		return -EIO;
+	err = gswip_mdio_poll(priv);
+	if (err)
+		return err;
 
 	gswip_mdio_w(priv, val, GSWIP_MDIO_WRITE);
 	gswip_mdio_w(priv, GSWIP_MDIO_CTRL_BUSY | GSWIP_MDIO_CTRL_WR |
@@ -343,17 +321,20 @@ static int gswip_mdio_wr(struct mii_bus *bus, int addr, int reg, u16 val)
 static int gswip_mdio_rd(struct mii_bus *bus, int addr, int reg)
 {
 	struct gswip_priv *priv = bus->priv;
+	int err;
 
-	if (gswip_mdio_poll(priv))
-		return -EIO;
+	err = gswip_mdio_poll(priv);
+	if (err)
+		return err;
 
 	gswip_mdio_w(priv, GSWIP_MDIO_CTRL_BUSY | GSWIP_MDIO_CTRL_RD |
 		((addr & GSWIP_MDIO_CTRL_PHYAD_MASK) << GSWIP_MDIO_CTRL_PHYAD_SHIFT) |
 		(reg & GSWIP_MDIO_CTRL_REGAD_MASK),
 		GSWIP_MDIO_CTRL);
 
-	if (gswip_mdio_poll(priv))
-		return -EIO;
+	err = gswip_mdio_poll(priv);
+	if (err)
+		return err;
 
 	return gswip_mdio_r(priv, GSWIP_MDIO_READ);
 }
@@ -370,23 +351,27 @@ static int gswip_mdio(struct gswip_priv *priv, struct device_node *mdio_np)
 	ds->slave_mii_bus->read = gswip_mdio_rd;
 	ds->slave_mii_bus->write = gswip_mdio_wr;
 	ds->slave_mii_bus->name = "lantiq,xrx200-mdio";
-	snprintf(ds->slave_mii_bus->id, MII_BUS_ID_SIZE, "%x", 0);
+	snprintf(ds->slave_mii_bus->id, MII_BUS_ID_SIZE, "%s-mii",
+		 dev_name(priv->dev));
 	ds->slave_mii_bus->parent = priv->dev;
 	ds->slave_mii_bus->phy_mask = ~ds->phys_mii_mask;
 
 	return of_mdiobus_register(ds->slave_mii_bus, mdio_np);
 }
 
-static void gswip_wait_pce_tbl_ready(struct gswip_priv *priv)
+static int gswip_wait_pce_tbl_ready(struct gswip_priv *priv)
 {
-	while (gswip_switch_r(priv, GSWIP_PCE_TBL_CTRL) & GSWIP_PCE_TBL_CTRL_BAS)
-		cond_resched();
+	int cnt = 10000;
+
+static u32 gswip_switch_r_timeout(priv, GSWIP_PCE_TBL_CTRL, GSWIP_PCE_TBL_CTRL_BAS);
+
+	return -ETIMEDOUT;
 }
 
 static int gswip_port_enable(struct dsa_switch *ds, int port,
 			     struct phy_device *phy)
 {
-	struct gswip_priv *priv = (struct gswip_priv *)ds->priv;
+	struct gswip_priv *priv = ds->priv;
 
 	/* RMON Counter Enable for port */
 	gswip_switch_w(priv, GSWIP_BM_PCFG_CNTEN, GSWIP_BM_PCFGp(port));
@@ -406,7 +391,7 @@ static int gswip_port_enable(struct dsa_switch *ds, int port,
 static void gswip_port_disable(struct dsa_switch *ds, int port,
 			       struct phy_device *phy)
 {
-	struct gswip_priv *priv = (struct gswip_priv *)ds->priv;
+	struct gswip_priv *priv = ds->priv;
 
 	gswip_switch_mask(priv, GSWIP_FDMA_PCTRL_EN, 0,
 			  GSWIP_FDMA_PCTRLp(port));
@@ -414,9 +399,10 @@ static void gswip_port_disable(struct dsa_switch *ds, int port,
 			  GSWIP_SDMA_PCTRLp(port));
 }
 
-static void gswip_pci_microcode(struct gswip_priv *priv)
+static int gswip_pce_microcode(struct gswip_priv *priv)
 {
 	int i;
+	int err;
 
 	gswip_switch_mask(priv, GSWIP_PCE_TBL_CTRL_ADDR_MASK |
 				GSWIP_PCE_TBL_CTRL_OPMOD_MASK,
@@ -437,7 +423,10 @@ static void gswip_pci_microcode(struct gswip_priv *priv)
 		/* start the table access: */
 		gswip_switch_mask(priv, 0, GSWIP_PCE_TBL_CTRL_BAS,
 				  GSWIP_PCE_TBL_CTRL);
-		gswip_wait_pce_tbl_ready(priv);
+		err = gswip_switch_r_timeout(priv, GSWIP_PCE_TBL_CTRL,
+					     GSWIP_PCE_TBL_CTRL_BAS);
+		if (err)
+			return err;
 	}
 
 	/* tell the switch that the microcode is loaded */
@@ -449,34 +438,40 @@ static int gswip_setup(struct dsa_switch *ds)
 {
 	struct gswip_priv *priv = ds->priv;
 	int i;
+	unsigned int cpu_port = priv->hw_info->cpu_port;
 
 	gswip_switch_w(priv, GSWIP_ETHSW_SWRES_R0, GSWIP_ETHSW_SWRES);
 	usleep_range(5000, 10000);
 	gswip_switch_w(priv, 0, GSWIP_ETHSW_SWRES);
 
-	/* disable port fetch/store dma, assume CPU port is last port */
-	for (i = 0; i <= priv->cpu_port; i++)
+	/* disable port fetch/store dma on all ports */
+	for (i = 0; i < priv->hw_info->max_ports; i++) {
 		gswip_port_disable(ds, i, NULL);
+	}
 
 	/* enable Switch */
 	gswip_mdio_mask(priv, 0, GSWIP_MDIO_GLOB_ENABLE, GSWIP_MDIO_GLOB);
 
-	gswip_pci_microcode(priv);
+	err = gswip_pce_microcode(priv);
+	if (err) {
+		dev_err(priv->dev, "writing PCE microcode failed, %i", err);
+		return err;
+	}
 
 	/* Default unknown Broadcast/Multicast/Unicast port maps */
-	gswip_switch_w(priv, BIT(priv->cpu_port), GSWIP_PCE_PMAP1);
-	gswip_switch_w(priv, BIT(priv->cpu_port), GSWIP_PCE_PMAP2);
-	gswip_switch_w(priv, BIT(priv->cpu_port), GSWIP_PCE_PMAP3);
+	gswip_switch_w(priv, BIT(cpu_port), GSWIP_PCE_PMAP1);
+	gswip_switch_w(priv, BIT(cpu_port), GSWIP_PCE_PMAP2);
+	gswip_switch_w(priv, BIT(cpu_port), GSWIP_PCE_PMAP3);
 
 	/* disable auto polling */
 	gswip_mdio_w(priv, 0x0, GSWIP_MDIO_MDC_CFG0);
 
 	/* enable special tag insertion on cpu port */
 	gswip_switch_mask(priv, 0, GSWIP_FDMA_PCTRL_STEN,
-			  GSWIP_FDMA_PCTRLp(priv->cpu_port));
+			  GSWIP_FDMA_PCTRLp(cpu_port));
 
 	gswip_switch_mask(priv, 0, GSWIP_MAC_CTRL_2_MLEN,
-			  GSWIP_MAC_CTRL_2p(priv->cpu_port));
+			  GSWIP_MAC_CTRL_2p(cpu_port));
 	gswip_switch_w(priv, VLAN_ETH_FRAME_LEN + 8, GSWIP_MAC_FLEN);
 	gswip_switch_mask(priv, 0, GSWIP_BM_QUEUE_GCTRL_GL_MOD,
 			  GSWIP_BM_QUEUE_GCTRL);
@@ -489,22 +484,22 @@ static int gswip_setup(struct dsa_switch *ds)
 				   GSWIP_PCE_GCTRL_1_MAC_GLOCK_MOD,
 			  GSWIP_PCE_GCTRL_1);
 
-	gswip_port_enable(ds, priv->cpu_port, NULL);
+	gswip_port_enable(ds, cpu_port, NULL);
 	return 0;
 }
 
 static void gswip_adjust_link(struct dsa_switch *ds, int port,
 			      struct phy_device *phydev)
 {
-	struct gswip_priv *priv = (struct gswip_priv *)ds->priv;
-	u16 phyaddr = phydev->mdio.addr & GSWIP_MDIO_PHY_ADDR_MASK;
+	struct gswip_priv *priv = ds->priv;
+	u16 macconf = phydev->mdio.addr & GSWIP_MDIO_PHY_ADDR_MASK;
 	u16 miirate = 0;
 	u16 miimode;
 	u16 lcl_adv = 0, rmt_adv = 0;
 	u8 flowctrl;
 
-	/* do not run this for the CPU port 6 */
-	if (port >= priv->cpu_port)
+	/* do not run this for the CPU port */
+	if (dsa_is_cpu_port(ds, port))
 		return;
 
 	miimode = gswip_mdio_r(priv, GSWIP_MII_CFGp(port));
@@ -512,12 +507,12 @@ static void gswip_adjust_link(struct dsa_switch *ds, int port,
 
 	switch (phydev->speed) {
 	case SPEED_1000:
-		phyaddr |= GSWIP_MDIO_PHY_SPEED_G1;
+		macconf |= GSWIP_MDIO_PHY_SPEED_G1;
 		miirate = GSWIP_MII_CFG_RATE_M125;
 		break;
 
 	case SPEED_100:
-		phyaddr |= GSWIP_MDIO_PHY_SPEED_M100;
+		macconf |= GSWIP_MDIO_PHY_SPEED_M100;
 		switch (miimode) {
 		case GSWIP_MII_CFG_MODE_RMIIM:
 		case GSWIP_MII_CFG_MODE_RMIIP:
@@ -530,20 +525,20 @@ static void gswip_adjust_link(struct dsa_switch *ds, int port,
 		break;
 
 	default:
-		phyaddr |= GSWIP_MDIO_PHY_SPEED_M10;
+		macconf |= GSWIP_MDIO_PHY_SPEED_M10;
 		miirate = GSWIP_MII_CFG_RATE_M2P5;
 		break;
 	}
 
 	if (phydev->link)
-		phyaddr |= GSWIP_MDIO_PHY_LINK_UP;
+		macconf |= GSWIP_MDIO_PHY_LINK_UP;
 	else
-		phyaddr |= GSWIP_MDIO_PHY_LINK_DOWN;
+		macconf |= GSWIP_MDIO_PHY_LINK_DOWN;
 
 	if (phydev->duplex == DUPLEX_FULL)
-		phyaddr |= GSWIP_MDIO_PHY_FDUP_EN;
+		macconf |= GSWIP_MDIO_PHY_FDUP_EN;
 	else
-		phyaddr |= GSWIP_MDIO_PHY_FDUP_DIS;
+		macconf |= GSWIP_MDIO_PHY_FDUP_DIS;
 
 	if (phydev->pause)
 		rmt_adv = LPA_PAUSE_CAP;
@@ -558,15 +553,15 @@ static void gswip_adjust_link(struct dsa_switch *ds, int port,
 	flowctrl = mii_resolve_flowctrl_fdx(lcl_adv, rmt_adv);
 
 	if (flowctrl & FLOW_CTRL_TX)
-		phyaddr |= GSWIP_MDIO_PHY_FCONTX_EN;
+		macconf |= GSWIP_MDIO_PHY_FCONTX_EN;
 	else
-		phyaddr |= GSWIP_MDIO_PHY_FCONTX_DIS;
+		macconf |= GSWIP_MDIO_PHY_FCONTX_DIS;
 	if (flowctrl & FLOW_CTRL_RX)
-		phyaddr |= GSWIP_MDIO_PHY_FCONRX_EN;
+		macconf |= GSWIP_MDIO_PHY_FCONRX_EN;
 	else
-		phyaddr |= GSWIP_MDIO_PHY_FCONRX_DIS;
+		macconf |= GSWIP_MDIO_PHY_FCONRX_DIS;
 
-	gswip_mdio_mask(priv, GSWIP_MDIO_PHY_MASK, phyaddr,
+	gswip_mdio_mask(priv, GSWIP_MDIO_PHY_MASK, macconf,
 			GSWIP_MDIO_PHYp(port));
 	gswip_mii_mask(priv, GSWIP_MII_CFG_RATE_MASK, miirate,
 		       GSWIP_MII_CFGp(port));
@@ -602,8 +597,13 @@ static u32 gswip_bcm_ram_entry_read(struct gswip_priv *priv, u32 table,
 			      table | GSWIP_BM_RAM_CTRL_BAS,
 			      GSWIP_BM_RAM_CTRL);
 
-	while (gswip_switch_r(priv, GSWIP_BM_RAM_CTRL) & GSWIP_BM_RAM_CTRL_BAS)
-		cond_resched();
+	err = gswip_switch_r_timeout(priv, GSWIP_BM_RAM_CTRL,
+				     GSWIP_BM_RAM_CTRL_BAS);
+	if (err) {
+		dev_err(priv->dev, "timeout while reading table: %u, index: %u",
+			table, index);
+		return 0;
+	}
 
 	result = gswip_switch_r(priv, GSWIP_BM_RAM_VAL(0));
 	result |= gswip_switch_r(priv, GSWIP_BM_RAM_VAL(1)) << 16;
@@ -678,14 +678,22 @@ static int gswip_probe(struct platform_device *pdev)
 	if (!priv->mii)
 		return -ENOMEM;
 
-	priv->ds = dsa_switch_alloc(dev, DSA_MAX_PORTS);
+	priv->hw_info = of_device_get_match_data(&pdev->dev);
+	if (!priv->hw_info)
+		return -EINVAL;
+
+	priv->ds = dsa_switch_alloc(dev, priv->hw_info->max_ports);
 	if (!priv->ds)
 		return -ENOMEM;
 
 	priv->ds->priv = priv;
 	priv->ds->ops = &gswip_switch_ops;
 	priv->dev = dev;
-	priv->cpu_port = 6;
+	if (ds->dst->cpu_dp->index != priv->hw_info->cpu_port) {
+		dev_err(dev, "wrong CPU port defined, HW only supports port: %i",
+			priv->hw_info->cpu_port);
+		return -EINVAL;
+	}
 
 	/* bring up the mdio bus */
 	mdio_np = of_find_compatible_node(pdev->dev.of_node, NULL,
@@ -728,8 +736,13 @@ static int gswip_remove(struct platform_device *pdev)
 	return 0;
 }
 
+static const struct gswip_hw_info gswip_xrx200 = {
+	max_ports = 7;
+	cpu_port = 6;
+};
+
 static const struct of_device_id gswip_of_match[] = {
-	{ .compatible = "lantiq,xrx200-gswip" },
+	{ .compatible = "lantiq,xrx200-gswip", data = &gswip_xrx200 },
 	{},
 };
 MODULE_DEVICE_TABLE(of, gswip_of_match);
