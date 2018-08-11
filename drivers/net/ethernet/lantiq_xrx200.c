@@ -496,20 +496,6 @@ static int xrx200_probe(struct platform_device *pdev)
 		return -ENOENT;
 	}
 
-	/* Make sure the firmware of the embedded GPHY is loaded before,
-	 * otherwise they will not be detectable on the MDIO bus.
-	 */
-	of_for_each_phandle(&it, err, np, "lantiq,phys", NULL, 0) {
-		phy_np = it.node;
-		if (phy_np) {
-			struct platform_device *phy = of_find_device_by_node(phy_np);
-
-			of_node_put(phy_np);
-			if (!platform_get_drvdata(phy))
-				return -EPROBE_DEFER;
-		}
-	}
-
 	/* get the clock */
 	priv->clk = devm_clk_get(dev, NULL);
 	if (IS_ERR(priv->clk)) {
