@@ -651,89 +651,6 @@ static const struct dsa_switch_ops gswip_switch_ops = {
 	.get_sset_count		= gswip_get_sset_count,
 };
 
-struct gswip_gphy_fw {
-	struct regmap *rcu_regmap;
-};
-
-static int gswip_load_gphy_fw(struct device_node *gphy_fw_node, struct gswip_gphy_fw *gphy_fw)
-{
-	struct device *dev = &gphy_fw->gswip->dev;
-	const struct xway_gphy_match_data *gphy_fw_name_cfg;
-	u32 gphy_mode;
-	int ret;
-	struct resource *res_gphy;
-	char gphyname[10];
-	
-	snprintf(gphyname, sizeof(gphyname), "gphy%d", index);
-
-	gphy_fw->clk_gate = devm_clk_get(dev, gphyname);
-	if (IS_ERR(gphy_fw->clk_gate)) {
-		dev_err(dev, "Failed to lookup gate clock\n");
-		return PTR_ERR(gphy_fw->clk_gate);
-	}
-
-	gphy_fw->rcu_regmap = syscon_regmap_lookup_by_phandle(dev->of_node, "lantiq,rcu");
-	if (IS_ERR(gphy_fw->rcu_regmap))
-		return PTR_ERR(gphy_fw->rcu_regmap);
-
-	gphy_fw->gphy_reset = of_reset_control_get_exclusive(gphy_fw_node, "gphy");
-	if (IS_ERR(priv->gphy_reset)) {
-		if (PTR_ERR(priv->gphy_reset) != -EPROBE_DEFER)
-			dev_err(dev, "Failed to lookup gphy reset\n");
-		return PTR_ERR(priv->gphy_reset);
-	}
-
-	ret = device_property_read_u32(dev, "lantiq,gphy-mode", &gphy_mode);
-	/* Default to GE mode */
-	if (ret)
-		gphy_mode = GPHY_MODE_GE;
-
-	switch (gphy_mode) {
-	case GPHY_MODE_FE:
-		gphy_fw->fw_name = gphy_fw_name_cfg->fe_firmware_name;
-		break;
-	case GPHY_MODE_GE:
-		gphy_fw->fw_name = gphy_fw_name_cfg->ge_firmware_name;
-		break;
-	default:
-		dev_err(dev, "Unknown GPHY mode %d\n", gphy_mode);
-		return -EINVAL;
-	}
-}
-
-static int gswip_load_gphy_fw_list(struct gswip_priv *priv)
-{
-	struct device *dev = &priv->dev;
-	struct device_node *gphy_fw_nodes, *gphy_fw_node;
-	struct gswip_gphy_fw *gphy_fw[];
-	int err;
-	int num;
-	int i = 0;
-
-	gphy_fw_nodes = of_get_child_by_name(dev->of_node, "gphy-fw");
-	if (!gphy_fw_nodes)
-		return 0;
-
-	num = of_get_available_child_count(gphy_fw_nodes);
-	
-	gphy_fw = devm_kmalloc_array(dev, num, sizeof(*gphy_fw), GFP_KERNEL | __GFP_ZERO);
-	if (!gphy_fw)
-		return -ENOMEM;
-
-	gphy_fw->rcu_regmap = syscon_regmap_lookup_by_phandle(gphy_fws, "regmap");
-	if (IS_ERR(gphy_fw->rcu_regmap))
-		return PTR_ERR(gphy_fw->rcu_regmap);
-
-	for_each_available_child_of_node(gphy_fw_nodes, gphy_fw_node) {
-		err = gswip_load_gphy_fw(gphy_fw_node, gphy_fw[i]);
-		if (err)
-			return err;
-		i++;
-	}
-
-	return 0;
-}
-
 static int gswip_probe(struct platform_device *pdev)
 {
 	struct gswip_priv *priv;
@@ -777,10 +694,6 @@ static int gswip_probe(struct platform_device *pdev)
 			priv->hw_info->cpu_port);
 		return -EINVAL;
 	}
-
-	err = gswip_load_gphy_fw(priv);
-	if (err)
-		return err;
 
 	/* bring up the mdio bus */
 	mdio_np = of_find_compatible_node(pdev->dev.of_node, NULL,

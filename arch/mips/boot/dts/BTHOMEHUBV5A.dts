@@ -194,24 +194,16 @@
 			reg = <0x13>;
 		};
 	};
-	
-	gphy-fw {
-		regmap = <&rcu0>;
+};
 
-		gphy@20 {
-			reg = <0x20 0x4>;
+&gphy0 {
+	lantiq,gphy-mode = <GPHY_MODE_GE>;
+	compatible = "lantiq,xrx200a2x-gphy";
+};
 
-			resets = <&reset0 31 30>, <&reset1 7 7>;
-			reset-names = "gphy", "gphy2";
-		};
-
-		gphy@68 {
-			reg = <0x68 0x4>;
-
-			resets = <&reset0 29 28>, <&reset1 6 6>;
-			reset-names = "gphy", "gphy2";
-		};
-	};
+&gphy1 {
+	lantiq,gphy-mode = <GPHY_MODE_GE>;
+	compatible = "lantiq,xrx200a2x-gphy";
 };
 
 &gpio {
