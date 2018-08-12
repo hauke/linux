@@ -13,13 +13,23 @@
 #include <linux/if_vlan.h>
 #include <linux/if_bridge.h>
 #include <net/dsa.h>
+#include <linux/iopoll.h>
+#include <linux/clk.h>
+#include <linux/firmware.h>
+#include <linux/regmap.h>
 
+#include <linux/reset.h>
 #include <linux/of_net.h>
 #include <linux/of_mdio.h>
 #include <linux/of_platform.h>
 #include <linux/version.h>
+#include <linux/mfd/syscon.h>
 
 #include "lantiq_pce.h"
+
+#include <lantiq_soc.h>
+
+#include <dt-bindings/mips/lantiq_rcu_gphy.h>
 
 
 /* GSWIP MDIO Registers */
@@ -155,18 +165,36 @@
 #define  GSWIP_SDMA_PCTRL_FCEN		BIT(1)	/* Flow Control Enable */
 #define  GSWIP_SDMA_PCTRL_PAUFWD	BIT(1)	/* Pause Frame Forwarding */
 
+#define XRX200_GPHY_FW_ALIGN	(16 * 1024)
+
 struct gswip_hw_info {
 	int max_ports;
 	int cpu_port;
+};
+
+struct xway_gphy_match_data {
+	char *fe_firmware_name;
+	char *ge_firmware_name;
+};
+
+struct gswip_gphy_fw {
+	struct clk *clk_gate;
+	struct reset_control *reset;
+	u32 fw_addr_offset;
+	char *fw_name;
 };
 
 struct gswip_priv {
 	__iomem void *gswip;
 	__iomem void *mdio;
 	__iomem void *mii;
-	struct gswip_hw_info *hw_info;
+	const struct gswip_hw_info *hw_info;
+	const struct xway_gphy_match_data *gphy_fw_name_cfg;
 	struct dsa_switch *ds;
 	struct device *dev;
+	struct regmap *rcu_regmap;
+	int num_gphy_fw;
+	struct gswip_gphy_fw *gphy_fw;
 };
 
 struct gswip_rmon_cnt_desc {
@@ -237,12 +265,13 @@ static void gswip_switch_mask(struct gswip_priv *priv, u32 clear, u32 set,
 	gswip_switch_w(priv, val, offset);
 }
 
-static u32 gswip_switch_r_timeout(struct gswip_priv *priv, u32 offset, cleared)
+static u32 gswip_switch_r_timeout(struct gswip_priv *priv, u32 offset,
+				  u32 cleared)
 {
 	u32 val;
 
 	return readx_poll_timeout(__raw_readl, priv->gswip + (offset * 4), val,
-				  (val & cleared) == 0, 20, 50000)
+				  (val & cleared) == 0, 20, 50000);
 }
 
 static u32 gswip_mdio_r(struct gswip_priv *priv, u32 offset)
@@ -359,15 +388,6 @@ static int gswip_mdio(struct gswip_priv *priv, struct device_node *mdio_np)
 	return of_mdiobus_register(ds->slave_mii_bus, mdio_np);
 }
 
-static int gswip_wait_pce_tbl_ready(struct gswip_priv *priv)
-{
-	int cnt = 10000;
-
-static u32 gswip_switch_r_timeout(priv, GSWIP_PCE_TBL_CTRL, GSWIP_PCE_TBL_CTRL_BAS);
-
-	return -ETIMEDOUT;
-}
-
 static int gswip_port_enable(struct dsa_switch *ds, int port,
 			     struct phy_device *phy)
 {
@@ -399,7 +419,7 @@ static void gswip_port_disable(struct dsa_switch *ds, int port,
 			  GSWIP_SDMA_PCTRLp(port));
 }
 
-static int gswip_pce_microcode(struct gswip_priv *priv)
+static int gswip_pce_load_microcode(struct gswip_priv *priv)
 {
 	int i;
 	int err;
@@ -432,13 +452,16 @@ static int gswip_pce_microcode(struct gswip_priv *priv)
 	/* tell the switch that the microcode is loaded */
 	gswip_switch_mask(priv, 0, GSWIP_PCE_GCTRL_0_MC_VALID,
 			  GSWIP_PCE_GCTRL_0);
+
+	return 0;
 }
 
 static int gswip_setup(struct dsa_switch *ds)
 {
 	struct gswip_priv *priv = ds->priv;
-	int i;
 	unsigned int cpu_port = priv->hw_info->cpu_port;
+	int i;
+	int err;
 
 	gswip_switch_w(priv, GSWIP_ETHSW_SWRES_R0, GSWIP_ETHSW_SWRES);
 	usleep_range(5000, 10000);
@@ -452,7 +475,7 @@ static int gswip_setup(struct dsa_switch *ds)
 	/* enable Switch */
 	gswip_mdio_mask(priv, 0, GSWIP_MDIO_GLOB_ENABLE, GSWIP_MDIO_GLOB);
 
-	err = gswip_pce_microcode(priv);
+	err = gswip_pce_load_microcode(priv);
 	if (err) {
 		dev_err(priv->dev, "writing PCE microcode failed, %i", err);
 		return err;
@@ -590,6 +613,7 @@ static u32 gswip_bcm_ram_entry_read(struct gswip_priv *priv, u32 table,
 				    u32 index)
 {
 	u32 result;
+	int err;
 
 	gswip_switch_w(priv, index, GSWIP_BM_RAM_ADDR);
 	gswip_switch_mask(priv, GSWIP_BM_RAM_CTRL_ADDR_MASK |
@@ -651,84 +675,178 @@ static const struct dsa_switch_ops gswip_switch_ops = {
 	.get_sset_count		= gswip_get_sset_count,
 };
 
-struct gswip_gphy_fw {
-	struct regmap *rcu_regmap;
+static const struct xway_gphy_match_data xrx200a1x_gphy_data = {
+	.fe_firmware_name = "lantiq/xrx200_phy22f_a14.bin",
+	.ge_firmware_name = "lantiq/xrx200_phy11g_a14.bin",
 };
 
-static int gswip_load_gphy_fw(struct device_node *gphy_fw_node, struct gswip_gphy_fw *gphy_fw)
+static const struct xway_gphy_match_data xrx200a2x_gphy_data = {
+	.fe_firmware_name = "lantiq/xrx200_phy22f_a22.bin",
+	.ge_firmware_name = "lantiq/xrx200_phy11g_a22.bin",
+};
+
+static const struct xway_gphy_match_data xrx300_gphy_data = {
+	.fe_firmware_name = "lantiq/xrx300_phy22f_a21.bin",
+	.ge_firmware_name = "lantiq/xrx300_phy11g_a21.bin",
+};
+
+static const struct of_device_id xway_gphy_match[] = {
+	{ .compatible = "lantiq,xrx200-gphy", .data = NULL },
+	{ .compatible = "lantiq,xrx200a1x-gphy", .data = &xrx200a1x_gphy_data },
+	{ .compatible = "lantiq,xrx200a2x-gphy", .data = &xrx200a2x_gphy_data },
+	{ .compatible = "lantiq,xrx300-gphy", .data = &xrx300_gphy_data },
+	{ .compatible = "lantiq,xrx330-gphy", .data = &xrx300_gphy_data },
+	{},
+};
+
+static int gswip_gphy_fw(struct gswip_priv *priv, struct gswip_gphy_fw *gphy_fw, struct device_node *gphy_fw_np, int i)
 {
-	struct device *dev = &gphy_fw->gswip->dev;
-	const struct xway_gphy_match_data *gphy_fw_name_cfg;
+	struct device *dev = priv->dev;
 	u32 gphy_mode;
 	int ret;
-	struct resource *res_gphy;
 	char gphyname[10];
-	
-	snprintf(gphyname, sizeof(gphyname), "gphy%d", index);
+
+	snprintf(gphyname, sizeof(gphyname), "gphy%d", i);
 
 	gphy_fw->clk_gate = devm_clk_get(dev, gphyname);
 	if (IS_ERR(gphy_fw->clk_gate)) {
 		dev_err(dev, "Failed to lookup gate clock\n");
 		return PTR_ERR(gphy_fw->clk_gate);
 	}
+	
+	ret = of_property_read_u32(gphy_fw_np, "reg", &gphy_fw->fw_addr_offset);
+	if (ret)
+		return ret;
 
-	gphy_fw->rcu_regmap = syscon_regmap_lookup_by_phandle(dev->of_node, "lantiq,rcu");
-	if (IS_ERR(gphy_fw->rcu_regmap))
-		return PTR_ERR(gphy_fw->rcu_regmap);
-
-	gphy_fw->gphy_reset = of_reset_control_get_exclusive(gphy_fw_node, "gphy");
-	if (IS_ERR(priv->gphy_reset)) {
-		if (PTR_ERR(priv->gphy_reset) != -EPROBE_DEFER)
+	gphy_fw->reset = of_reset_control_get_exclusive(gphy_fw_np, "gphy");
+	if (IS_ERR(priv->gphy_fw)) {
+		if (PTR_ERR(priv->gphy_fw) != -EPROBE_DEFER)
 			dev_err(dev, "Failed to lookup gphy reset\n");
-		return PTR_ERR(priv->gphy_reset);
+		return PTR_ERR(priv->gphy_fw);
 	}
 
-	ret = device_property_read_u32(dev, "lantiq,gphy-mode", &gphy_mode);
+	ret = of_property_read_u32(gphy_fw_np, "lantiq,gphy-mode", &gphy_mode);
 	/* Default to GE mode */
 	if (ret)
 		gphy_mode = GPHY_MODE_GE;
 
 	switch (gphy_mode) {
 	case GPHY_MODE_FE:
-		gphy_fw->fw_name = gphy_fw_name_cfg->fe_firmware_name;
+		gphy_fw->fw_name = priv->gphy_fw_name_cfg->fe_firmware_name;
 		break;
 	case GPHY_MODE_GE:
-		gphy_fw->fw_name = gphy_fw_name_cfg->ge_firmware_name;
+		gphy_fw->fw_name = priv->gphy_fw_name_cfg->ge_firmware_name;
 		break;
 	default:
 		dev_err(dev, "Unknown GPHY mode %d\n", gphy_mode);
 		return -EINVAL;
 	}
+	return 0;
 }
 
-static int gswip_load_gphy_fw_list(struct gswip_priv *priv)
+static int gswip_gphy_fw_load(struct gswip_priv *priv, struct gswip_gphy_fw *gphy_fw)
 {
-	struct device *dev = &priv->dev;
-	struct device_node *gphy_fw_nodes, *gphy_fw_node;
-	struct gswip_gphy_fw *gphy_fw[];
+	struct device *dev = priv->dev;
+	const struct firmware *fw;
+	void *fw_addr;
+	dma_addr_t dma_addr;
+	dma_addr_t dev_addr;
+	size_t size;
+	int ret;
+
+	ret = clk_prepare_enable(gphy_fw->clk_gate);
+	if (ret)
+		return ret;
+
+	reset_control_assert(gphy_fw->reset);
+
+	ret = request_firmware(&fw, gphy_fw->fw_name, dev);
+	if (ret) {
+		dev_err(dev, "failed to load firmware: %s, error: %i\n",
+			gphy_fw->fw_name, ret);
+		return ret;
+	}
+
+	/*
+	 * GPHY cores need the firmware code in a persistent and contiguous
+	 * memory area with a 16 kB boundary aligned start address.
+	 */
+	size = fw->size + XRX200_GPHY_FW_ALIGN;
+
+	fw_addr = dmam_alloc_coherent(dev, size, &dma_addr, GFP_KERNEL);
+	if (fw_addr) {
+		fw_addr = PTR_ALIGN(fw_addr, XRX200_GPHY_FW_ALIGN);
+		dev_addr = ALIGN(dma_addr, XRX200_GPHY_FW_ALIGN);
+		memcpy(fw_addr, fw->data, fw->size);
+	} else {
+		dev_err(dev, "failed to alloc firmware memory\n");
+		release_firmware(fw);
+		return -ENOMEM;
+	}
+
+	release_firmware(fw);
+
+	ret = regmap_write(priv->rcu_regmap, gphy_fw->fw_addr_offset, dev_addr);
+	if (ret)
+		return ret;
+
+	reset_control_deassert(gphy_fw->reset);
+
+	return ret;
+}
+
+static int gswip_gphy_fw_list(struct gswip_priv *priv,
+			      struct device_node *gphy_fw_list_np)
+{
+	struct device *dev = priv->dev;
+	struct device_node *gphy_fw_np;
+	const struct of_device_id *match;
 	int err;
-	int num;
 	int i = 0;
 
-	gphy_fw_nodes = of_get_child_by_name(dev->of_node, "gphy-fw");
-	if (!gphy_fw_nodes)
-		return 0;
+	if (of_device_is_compatible(dev->of_node, "lantiq,xrx200-gphy")) {
+		switch (ltq_soc_type()) {
+		case SOC_TYPE_VR9:
+			priv->gphy_fw_name_cfg = &xrx200a1x_gphy_data;
+			break;
+		case SOC_TYPE_VR9_2:
+			priv->gphy_fw_name_cfg = &xrx200a2x_gphy_data;
+			break;
+		}
+	}
 
-	num = of_get_available_child_count(gphy_fw_nodes);
-	
-	gphy_fw = devm_kmalloc_array(dev, num, sizeof(*gphy_fw), GFP_KERNEL | __GFP_ZERO);
-	if (!gphy_fw)
+	match = of_match_node(xway_gphy_match, gphy_fw_list_np);
+	if (match && match->data)
+		priv->gphy_fw_name_cfg = match->data;
+
+	if (!priv->gphy_fw_name_cfg) {
+		dev_err(dev, "GPHY compatible type not supported");
+		return -ENOENT;
+	}
+
+	priv->num_gphy_fw = of_get_available_child_count(gphy_fw_list_np);
+	if (!priv->num_gphy_fw)
+		return -ENOENT;
+
+	priv->rcu_regmap = syscon_regmap_lookup_by_phandle(gphy_fw_list_np, "lantiq,rcu");
+	if (IS_ERR(priv->rcu_regmap))
+		return PTR_ERR(priv->rcu_regmap);
+
+	priv->gphy_fw = devm_kmalloc_array(dev, priv->num_gphy_fw,
+					   sizeof(*priv->gphy_fw),
+					   GFP_KERNEL | __GFP_ZERO);
+	if (!priv->gphy_fw)
 		return -ENOMEM;
 
-	gphy_fw->rcu_regmap = syscon_regmap_lookup_by_phandle(gphy_fws, "regmap");
-	if (IS_ERR(gphy_fw->rcu_regmap))
-		return PTR_ERR(gphy_fw->rcu_regmap);
-
-	for_each_available_child_of_node(gphy_fw_nodes, gphy_fw_node) {
-		err = gswip_load_gphy_fw(gphy_fw_node, gphy_fw[i]);
+	for_each_available_child_of_node(gphy_fw_list_np, gphy_fw_np) {
+		err = gswip_gphy_fw(priv, &priv->gphy_fw[i], gphy_fw_np, i);
 		if (err)
 			return err;
 		i++;
+	}
+	
+	for (i = 0; i < priv->num_gphy_fw; i++) {
+		gswip_gphy_fw_load(priv, &priv->gphy_fw[i]);
 	}
 
 	return 0;
@@ -738,7 +856,7 @@ static int gswip_probe(struct platform_device *pdev)
 {
 	struct gswip_priv *priv;
 	struct resource *gswip_res, *mdio_res, *mii_res;
-	struct device_node *mdio_np;
+	struct device_node *mdio_np, *gphy_fw_np;
 	struct device *dev = &pdev->dev;
 	int err;
 
@@ -761,7 +879,7 @@ static int gswip_probe(struct platform_device *pdev)
 	if (!priv->mii)
 		return -ENOMEM;
 
-	priv->hw_info = of_device_get_match_data(&pdev->dev);
+	priv->hw_info = of_device_get_match_data(dev);
 	if (!priv->hw_info)
 		return -EINVAL;
 
@@ -772,15 +890,22 @@ static int gswip_probe(struct platform_device *pdev)
 	priv->ds->priv = priv;
 	priv->ds->ops = &gswip_switch_ops;
 	priv->dev = dev;
-	if (ds->dst->cpu_dp->index != priv->hw_info->cpu_port) {
+	if (priv->ds->dst->cpu_dp->index != priv->hw_info->cpu_port) {
 		dev_err(dev, "wrong CPU port defined, HW only supports port: %i",
 			priv->hw_info->cpu_port);
 		return -EINVAL;
 	}
 
-	err = gswip_load_gphy_fw(priv);
-	if (err)
-		return err;
+	/* bring up the mdio bus */
+	gphy_fw_np = of_find_compatible_node(pdev->dev.of_node, NULL,
+					  "lantiq,gphy-fw");
+	if (gphy_fw_np) {
+		err = gswip_gphy_fw_list(priv, gphy_fw_np);
+		if (err) {
+			dev_err(dev, "gphy fw probe failed\n");
+			return err;
+		}
+	}
 
 	/* bring up the mdio bus */
 	mdio_np = of_find_compatible_node(pdev->dev.of_node, NULL,
@@ -824,12 +949,12 @@ static int gswip_remove(struct platform_device *pdev)
 }
 
 static const struct gswip_hw_info gswip_xrx200 = {
-	max_ports = 7;
-	cpu_port = 6;
+	.max_ports = 7,
+	.cpu_port = 6,
 };
 
 static const struct of_device_id gswip_of_match[] = {
-	{ .compatible = "lantiq,xrx200-gswip", data = &gswip_xrx200 },
+	{ .compatible = "lantiq,xrx200-gswip", .data = &gswip_xrx200 },
 	{},
 };
 MODULE_DEVICE_TABLE(of, gswip_of_match);
