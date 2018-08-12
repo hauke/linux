@@ -196,20 +196,21 @@
 	};
 	
 	gphy-fw {
+		compatible = "lantiq,xrx200-gphy", "lantiq,gphy-fw";
 		regmap = <&rcu0>;
 
 		gphy@20 {
-			reg = <0x20 0x4>;
+			reg = <0x20>;
 
-			resets = <&reset0 31 30>, <&reset1 7 7>;
-			reset-names = "gphy", "gphy2";
+			resets = <&reset0 31 30>;
+			reset-names = "gphy";
 		};
 
 		gphy@68 {
-			reg = <0x68 0x4>;
+			reg = <0x68>;
 
-			resets = <&reset0 29 28>, <&reset1 6 6>;
-			reset-names = "gphy", "gphy2";
+			resets = <&reset0 29 28>;
+			reset-names = "gphy";
 		};
 	};
 };
