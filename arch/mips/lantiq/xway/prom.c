@@ -11,6 +11,7 @@
 #include <linux/clk.h>
 #include <asm/bootinfo.h>
 #include <asm/time.h>
+#include <asm/traps.h>
 
 #include <lantiq_soc.h>
 
@@ -39,6 +40,32 @@
 #define PART_MASK	0x0FFFFFFF
 #define REV_SHIFT	28
 #define REV_MASK	0xF0000000
+
+#define MPS_SRAM_BASE_ADDRESS	(KSEG1 | 0x1F200000)
+#define MPS_SRAM_BOOT_OFFSET	0x1C0
+
+/* Offset for CPU1 (both CPUs have same register set) */
+#define BOOT_BASE_ADDRESS	(MPS_SRAM_BASE_ADDRESS + MPS_SRAM_BOOT_OFFSET)
+#define BOOT_CPU_OFFSET		0x20
+
+#define BOOT_RVEC		(BOOT_BASE_ADDRESS + 0x00)
+#define BOOT_NVEC		(BOOT_BASE_ADDRESS + 0x04)
+#define BOOT_EVEC		(BOOT_BASE_ADDRESS + 0x08)
+
+void __init ltq_soc_nmi_setup(void)
+{
+	extern void (*nmi_handler)(void);
+
+	ltq_w32((unsigned long)&nmi_handler, (void *)BOOT_NVEC);
+}
+
+void __init ltq_soc_ejtag_setup(void)
+{
+	extern void (*ejtag_debug_handler)(void);
+
+	ltq_w32((unsigned long)&ejtag_debug_handler, (void *)BOOT_EVEC);
+}
+
 
 void __init ltq_soc_detect(struct ltq_soc_info *i)
 {
@@ -143,4 +170,7 @@ void __init ltq_soc_detect(struct ltq_soc_info *i)
 		unreachable();
 		break;
 	}
+
+	board_nmi_handler_setup = ltq_soc_nmi_setup;
+	board_ejtag_handler_setup = ltq_soc_ejtag_setup;
 }
