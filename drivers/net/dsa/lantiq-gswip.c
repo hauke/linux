@@ -699,51 +699,6 @@ static const struct of_device_id xway_gphy_match[] = {
 	{},
 };
 
-static int gswip_gphy_fw(struct gswip_priv *priv, struct gswip_gphy_fw *gphy_fw, struct device_node *gphy_fw_np, int i)
-{
-	struct device *dev = priv->dev;
-	u32 gphy_mode;
-	int ret;
-	char gphyname[10];
-
-	snprintf(gphyname, sizeof(gphyname), "gphy%d", i);
-
-	gphy_fw->clk_gate = devm_clk_get(dev, gphyname);
-	if (IS_ERR(gphy_fw->clk_gate)) {
-		dev_err(dev, "Failed to lookup gate clock\n");
-		return PTR_ERR(gphy_fw->clk_gate);
-	}
-	
-	ret = of_property_read_u32(gphy_fw_np, "reg", &gphy_fw->fw_addr_offset);
-	if (ret)
-		return ret;
-
-	gphy_fw->reset = of_reset_control_get_exclusive(gphy_fw_np, "gphy");
-	if (IS_ERR(priv->gphy_fw)) {
-		if (PTR_ERR(priv->gphy_fw) != -EPROBE_DEFER)
-			dev_err(dev, "Failed to lookup gphy reset\n");
-		return PTR_ERR(priv->gphy_fw);
-	}
-
-	ret = of_property_read_u32(gphy_fw_np, "lantiq,gphy-mode", &gphy_mode);
-	/* Default to GE mode */
-	if (ret)
-		gphy_mode = GPHY_MODE_GE;
-
-	switch (gphy_mode) {
-	case GPHY_MODE_FE:
-		gphy_fw->fw_name = priv->gphy_fw_name_cfg->fe_firmware_name;
-		break;
-	case GPHY_MODE_GE:
-		gphy_fw->fw_name = priv->gphy_fw_name_cfg->ge_firmware_name;
-		break;
-	default:
-		dev_err(dev, "Unknown GPHY mode %d\n", gphy_mode);
-		return -EINVAL;
-	}
-	return 0;
-}
-
 static int gswip_gphy_fw_load(struct gswip_priv *priv, struct gswip_gphy_fw *gphy_fw)
 {
 	struct device *dev = priv->dev;
@@ -795,6 +750,69 @@ static int gswip_gphy_fw_load(struct gswip_priv *priv, struct gswip_gphy_fw *gph
 	return ret;
 }
 
+static int gswip_gphy_fw_probe(struct gswip_priv *priv, struct gswip_gphy_fw *gphy_fw, struct device_node *gphy_fw_np, int i)
+{
+	struct device *dev = priv->dev;
+	u32 gphy_mode;
+	int ret;
+	char gphyname[10];
+
+	snprintf(gphyname, sizeof(gphyname), "gphy%d", i);
+
+	gphy_fw->clk_gate = devm_clk_get(dev, gphyname);
+	if (IS_ERR(gphy_fw->clk_gate)) {
+		dev_err(dev, "Failed to lookup gate clock\n");
+		return PTR_ERR(gphy_fw->clk_gate);
+	}
+	
+	ret = of_property_read_u32(gphy_fw_np, "reg", &gphy_fw->fw_addr_offset);
+	if (ret)
+		return ret;
+
+	ret = of_property_read_u32(gphy_fw_np, "lantiq,gphy-mode", &gphy_mode);
+	/* Default to GE mode */
+	if (ret)
+		gphy_mode = GPHY_MODE_GE;
+
+	switch (gphy_mode) {
+	case GPHY_MODE_FE:
+		gphy_fw->fw_name = priv->gphy_fw_name_cfg->fe_firmware_name;
+		break;
+	case GPHY_MODE_GE:
+		gphy_fw->fw_name = priv->gphy_fw_name_cfg->ge_firmware_name;
+		break;
+	default:
+		dev_err(dev, "Unknown GPHY mode %d\n", gphy_mode);
+		return -EINVAL;
+	}
+
+	gphy_fw->reset = of_reset_control_array_get_exclusive(gphy_fw_np);
+	if (IS_ERR(priv->gphy_fw)) {
+		if (PTR_ERR(priv->gphy_fw) != -EPROBE_DEFER)
+			dev_err(dev, "Failed to lookup gphy reset\n");
+		return PTR_ERR(priv->gphy_fw);
+	}
+
+	return gswip_gphy_fw_load(priv, gphy_fw);
+}
+
+static void gswip_gphy_fw_remove(struct gswip_priv *priv, struct gswip_gphy_fw *gphy_fw)
+{
+	int ret;
+
+	/* check if the device was fully probed */
+	if (!gphy_fw->fw_name)
+		return;
+
+	ret = regmap_write(priv->rcu_regmap, gphy_fw->fw_addr_offset, 0);
+	if (ret)
+		dev_err(priv->dev, "can not reset GPHY FW pointer");
+
+	clk_disable_unprepare(gphy_fw->clk_gate);
+
+	reset_control_put(gphy_fw->reset);
+}
+
 static int gswip_gphy_fw_list(struct gswip_priv *priv,
 			      struct device_node *gphy_fw_list_np)
 {
@@ -839,17 +857,18 @@ static int gswip_gphy_fw_list(struct gswip_priv *priv,
 		return -ENOMEM;
 
 	for_each_available_child_of_node(gphy_fw_list_np, gphy_fw_np) {
-		err = gswip_gphy_fw(priv, &priv->gphy_fw[i], gphy_fw_np, i);
+		err = gswip_gphy_fw_probe(priv, &priv->gphy_fw[i], gphy_fw_np, i);
 		if (err)
-			return err;
+			goto remove_gphy;
 		i++;
-	}
-	
-	for (i = 0; i < priv->num_gphy_fw; i++) {
-		gswip_gphy_fw_load(priv, &priv->gphy_fw[i]);
 	}
 
 	return 0;
+
+remove_gphy:
+	for (i = 0; i < priv->num_gphy_fw; i++)
+		gswip_gphy_fw_remove(priv, &priv->gphy_fw[i]);
+	return err;
 }
 
 static int gswip_probe(struct platform_device *pdev)
@@ -859,6 +878,7 @@ static int gswip_probe(struct platform_device *pdev)
 	struct device_node *mdio_np, *gphy_fw_np;
 	struct device *dev = &pdev->dev;
 	int err;
+	int i;
 
 	priv = devm_kzalloc(dev, sizeof(*priv), GFP_KERNEL);
 	if (!priv)
@@ -890,15 +910,10 @@ static int gswip_probe(struct platform_device *pdev)
 	priv->ds->priv = priv;
 	priv->ds->ops = &gswip_switch_ops;
 	priv->dev = dev;
-	if (priv->ds->dst->cpu_dp->index != priv->hw_info->cpu_port) {
-		dev_err(dev, "wrong CPU port defined, HW only supports port: %i",
-			priv->hw_info->cpu_port);
-		return -EINVAL;
-	}
 
 	/* bring up the mdio bus */
 	gphy_fw_np = of_find_compatible_node(pdev->dev.of_node, NULL,
-					  "lantiq,gphy-fw");
+					     "lantiq,gphy-fw");
 	if (gphy_fw_np) {
 		err = gswip_gphy_fw_list(priv, gphy_fw_np);
 		if (err) {
@@ -914,25 +929,38 @@ static int gswip_probe(struct platform_device *pdev)
 		err = gswip_mdio(priv, mdio_np);
 		if (err) {
 			dev_err(dev, "mdio probe failed\n");
-			return err;
+			goto gphy_fw;
 		}
 	}
-
-	platform_set_drvdata(pdev, priv);
 
 	err = dsa_register_switch(priv->ds);
 	if (err) {
 		dev_err(dev, "dsa switch register failed: %i\n", err);
-		if (mdio_np)
-			mdiobus_unregister(priv->ds->slave_mii_bus);
+		goto mdio_bus;
+	}
+	if (priv->ds->dst->cpu_dp->index != priv->hw_info->cpu_port) {
+		dev_err(dev, "wrong CPU port defined, HW only supports port: %i",
+			priv->hw_info->cpu_port);
+		err = -EINVAL;
+		goto mdio_bus;
 	}
 
+	platform_set_drvdata(pdev, priv);
+	return 0;
+
+mdio_bus:
+	if (mdio_np)
+		mdiobus_unregister(priv->ds->slave_mii_bus);
+gphy_fw:
+	for (i = 0; i < priv->num_gphy_fw; i++)
+		gswip_gphy_fw_remove(priv, &priv->gphy_fw[i]);
 	return err;
 }
 
 static int gswip_remove(struct platform_device *pdev)
 {
 	struct gswip_priv *priv = platform_get_drvdata(pdev);
+	int i;
 
 	if (!priv)
 		return 0;
@@ -944,6 +972,9 @@ static int gswip_remove(struct platform_device *pdev)
 
 	if (priv->ds->slave_mii_bus)
 		mdiobus_unregister(priv->ds->slave_mii_bus);
+
+	for (i = 0; i < priv->num_gphy_fw; i++)
+		gswip_gphy_fw_remove(priv, &priv->gphy_fw[i]);
 
 	return 0;
 }
