@@ -196,8 +196,8 @@
 	};
 	
 	gphy-fw {
-		compatible = "lantiq,xrx200-gphy", "lantiq,gphy-fw";
-		regmap = <&rcu0>;
+		compatible = "lantiq,xrx200a2x-gphy", "lantiq,xrx200-gphy", "lantiq,gphy-fw";
+		lantiq,rcu = <&rcu0>;
 
 		gphy@20 {
 			reg = <0x20>;
