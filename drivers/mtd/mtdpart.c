@@ -29,10 +29,12 @@
 #include <linux/kmod.h>
 #include <linux/mtd/mtd.h>
 #include <linux/mtd/partitions.h>
+#include <linux/magic.h>
 #include <linux/err.h>
 #include <linux/of.h>
 
 #include "mtdcore.h"
+#include "mtdsplit/mtdsplit.h"
 
 /* Our partition linked list */
 static LIST_HEAD(mtd_partitions);
@@ -51,6 +53,8 @@ struct mtd_part {
 	uint64_t offset;
 	struct list_head list;
 };
+
+static void mtd_partition_split(struct mtd_info *master, struct mtd_part *part);
 
 /*
  * Given a pointer to the MTD object in the mtd_part structure, we can retrieve
@@ -625,6 +629,7 @@ int mtd_add_partition(struct mtd_info *parent, const char *name,
 	ret = add_mtd_device(&new->mtd);
 	if (ret)
 		goto err_remove_part;
+	mtd_partition_split(parent, new);
 
 	mtd_add_partition_attrs(new);
 
@@ -712,6 +717,29 @@ int mtd_del_partition(struct mtd_info *mtd, int partno)
 }
 EXPORT_SYMBOL_GPL(mtd_del_partition);
 
+#ifdef CONFIG_MTD_SPLIT_FIRMWARE_NAME
+#define SPLIT_FIRMWARE_NAME	CONFIG_MTD_SPLIT_FIRMWARE_NAME
+#else
+#define SPLIT_FIRMWARE_NAME	"unused"
+#endif
+
+static void split_firmware(struct mtd_info *master, struct mtd_part *part)
+{
+}
+
+static void mtd_partition_split(struct mtd_info *master, struct mtd_part *part)
+{
+	static int rootfs_found = 0;
+
+	if (rootfs_found)
+		return;
+
+	if (IS_ENABLED(CONFIG_MTD_SPLIT_FIRMWARE) &&
+	    !strcmp(part->mtd.name, SPLIT_FIRMWARE_NAME) &&
+	    !of_find_property(mtd_get_of_node(&part->mtd), "compatible", NULL))
+		split_firmware(master, part);
+}
+
 /*
  * This function, given a master MTD object and a partition table, creates
  * and registers slave MTD objects which are bound to the master according to
@@ -752,6 +780,7 @@ int add_mtd_partitions(struct mtd_info *master,
 			goto err_del_partitions;
 		}
 
+		mtd_partition_split(master, slave);
 		mtd_add_partition_attrs(slave);
 		/* Look for subpartitions */
 		parse_mtd_partitions(&slave->mtd, parts[i].types, NULL);
