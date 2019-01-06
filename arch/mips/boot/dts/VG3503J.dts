@@ -57,61 +57,6 @@
 	};
 };
 
-&eth0 {
-	interface@0 {
-		compatible = "lantiq,xrx200-pdi";
-		#address-cells = <1>;
-		#size-cells = <0>;
-		reg = <0>;
-
-		lantiq,switch;
-		ethernet@2 {
-			compatible = "lantiq,xrx200-pdi-port";
-			reg = <2>;
-			phy-mode = "mii";
-			phy-handle = <&phy11>;
-		};
-		ethernet@4 {
-			compatible = "lantiq,xrx200-pdi-port";
-			reg = <4>;
-			phy-mode = "mii";
-			phy-handle = <&phy13>;
-		};
-	};
-
-	mdio@0 {
-		#address-cells = <1>;
-		#size-cells = <0>;
-		compatible = "lantiq,xrx200-mdio";
-		reg = <0>;
-
-		phy11: ethernet-phy@11 {
-			reg = <0x11>;
-			compatible = "lantiq,phy11g", "ethernet-phy-ieee802.3-c22";
-			lantiq,led1h = <0x70>;
-			lantiq,led1l = <0x00>;
-			lantiq,led2h = <0x00>;
-			lantiq,led2l = <0x03>;
-		};
-		phy13: ethernet-phy@13 {
-			reg = <0x13>;
-			compatible = "lantiq,phy11g", "ethernet-phy-ieee802.3-c22";
-			lantiq,led1h = <0x70>;
-			lantiq,led1l = <0x00>;
-			lantiq,led2h = <0x00>;
-			lantiq,led2l = <0x03>;
-		};
-	};
-};
-
-&gphy0 {
-	lantiq,gphy-mode = <GPHY_MODE_GE>;
-};
-
-&gphy1 {
-	lantiq,gphy-mode = <GPHY_MODE_GE>;
-};
-
 &gpio {
 	pinctrl-names = "default";
 	pinctrl-0 = <&state_default>;
