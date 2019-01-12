@@ -729,7 +729,7 @@ static int gswip_port_bridge_join(struct dsa_switch *ds, int port,
 	/* Check if there is already a page for this bridge and by the way
 	 * search for a free slot
 	 */
-	for (i = 0; i < ARRAY_SIZE(priv->vlans); i++) {
+	for (i = 1; i < ARRAY_SIZE(priv->vlans); i++) {
 		if (priv->vlans[i].bridge == bridge) {
 			idx = i;
 			break;
@@ -816,7 +816,7 @@ static void gswip_port_bridge_leave(struct dsa_switch *ds, int port,
 	/* Check if there is already a page for this bridge and by the way
 	 * search for a free slot
 	 */
-	for (i = 0; i < ARRAY_SIZE(priv->vlans); i++) {
+	for (i = 1; i < ARRAY_SIZE(priv->vlans); i++) {
 		if (priv->vlans[i].bridge == bridge) {
 			idx = i;
 			break;
@@ -903,7 +903,7 @@ static int gswip_port_fdb(struct dsa_switch *ds, int port,
 	if (!bridge)
 		return -EINVAL;
 
-	for (i = 0; i < ARRAY_SIZE(priv->vlans); i++) {
+	for (i = 1; i < ARRAY_SIZE(priv->vlans); i++) {
 		if (priv->vlans[i].bridge == bridge) {
 			idx = i;
 			break;
