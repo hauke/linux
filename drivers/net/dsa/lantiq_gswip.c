@@ -229,6 +229,7 @@ struct gswip_pce_table_entry {
 	u8 gmap;
 	bool type;
 	bool valid;
+	bool key_mode;
 };
 
 struct gswip_rmon_cnt_desc {
@@ -469,6 +470,8 @@ static int gswip_pce_table_entry_read(struct gswip_priv *priv,
 	int i;
 	int err;
 	u16 crtl;
+	u16 addr_mode = tbl->key_mode ? GSWIP_PCE_TBL_CTRL_OPMOD_KSRD :
+					GSWIP_PCE_TBL_CTRL_OPMOD_ADRD;
 
 	err = gswip_switch_r_timeout(priv, GSWIP_PCE_TBL_CTRL,
 				     GSWIP_PCE_TBL_CTRL_BAS);
@@ -478,8 +481,7 @@ static int gswip_pce_table_entry_read(struct gswip_priv *priv,
 	gswip_switch_w(priv, tbl->index, GSWIP_PCE_TBL_ADDR);
 	gswip_switch_mask(priv, GSWIP_PCE_TBL_CTRL_ADDR_MASK |
 				GSWIP_PCE_TBL_CTRL_OPMOD_MASK,
-			  tbl->table | GSWIP_PCE_TBL_CTRL_OPMOD_ADRD |
-				       GSWIP_PCE_TBL_CTRL_BAS,
+			  tbl->table | addr_mode | GSWIP_PCE_TBL_CTRL_BAS,
 			  GSWIP_PCE_TBL_CTRL);
 
 	err = gswip_switch_r_timeout(priv, GSWIP_PCE_TBL_CTRL,
@@ -510,6 +512,8 @@ static int gswip_pce_table_entry_write(struct gswip_priv *priv,
 	int i;
 	int err;
 	u16 crtl;
+	u16 addr_mode = tbl->key_mode ? GSWIP_PCE_TBL_CTRL_OPMOD_KSWR :
+					GSWIP_PCE_TBL_CTRL_OPMOD_ADWR;
 
 	err = gswip_switch_r_timeout(priv, GSWIP_PCE_TBL_CTRL,
 				     GSWIP_PCE_TBL_CTRL_BAS);
@@ -519,7 +523,7 @@ static int gswip_pce_table_entry_write(struct gswip_priv *priv,
 	gswip_switch_w(priv, tbl->index, GSWIP_PCE_TBL_ADDR);
 	gswip_switch_mask(priv, GSWIP_PCE_TBL_CTRL_ADDR_MASK |
 				GSWIP_PCE_TBL_CTRL_OPMOD_MASK,
-			  tbl->table | GSWIP_PCE_TBL_CTRL_OPMOD_ADWR,
+			  tbl->table | addr_mode,
 			  GSWIP_PCE_TBL_CTRL);
 
 	for (i = 0; i < ARRAY_SIZE(tbl->key); i++)
@@ -530,7 +534,7 @@ static int gswip_pce_table_entry_write(struct gswip_priv *priv,
 
 	gswip_switch_mask(priv, GSWIP_PCE_TBL_CTRL_ADDR_MASK |
 				GSWIP_PCE_TBL_CTRL_OPMOD_MASK,
-			  tbl->table | GSWIP_PCE_TBL_CTRL_OPMOD_ADWR,
+			  tbl->table | addr_mode,
 			  GSWIP_PCE_TBL_CTRL);
 
 	gswip_switch_w(priv, tbl->mask, GSWIP_PCE_TBL_MASK);
