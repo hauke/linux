@@ -777,7 +777,7 @@ static int gswip_port_bridge_join(struct dsa_switch *ds, int port,
 
 		vlan_mapping.index = idx;
 		vlan_mapping.table = 0x02;
-		vlan_mapping.key[0] = idx; /* VLAN ID byte */
+		vlan_mapping.val[0] = idx; /* VLAN ID byte */
 	} else {
 		/* Read the existing VLAN mapping entry from the switch */
 		vlan_mapping.index = idx;
@@ -789,13 +789,12 @@ static int gswip_port_bridge_join(struct dsa_switch *ds, int port,
 			return err;
 		}
 
-		if (vlan_mapping.key[0] != idx)
+		if (vlan_mapping.val[0] != idx)
 			dev_err(priv->dev, "unexpected vlan id in mapping: %d\n",
-				vlan_mapping.key[0]);
+				vlan_mapping.val[0]);
 	}
 
 	/* Update the VLAN mapping entry and write it to the switch */
-	vlan_mapping.val[0] |= BIT(port);
 	vlan_mapping.val[1] |= BIT(port);
 	err = gswip_pce_table_entry_write(priv, &vlan_mapping);
 	if (err) {
@@ -850,7 +849,6 @@ static void gswip_port_bridge_leave(struct dsa_switch *ds, int port,
 		return;
 	}
 
-	vlan_mapping.val[0] &= ~BIT(port);
 	vlan_mapping.val[1] &= ~BIT(port);
 	err = gswip_pce_table_entry_write(priv, &vlan_mapping);
 	if (err) {
@@ -858,7 +856,7 @@ static void gswip_port_bridge_leave(struct dsa_switch *ds, int port,
 		return;
 	}
 
-	if (vlan_mapping.val[0] == 0 && vlan_mapping.val[1] == 0) {
+	if (vlan_mapping.val[1] == 0) {
 		vlan_active.index = idx;
 		vlan_active.table = 0x01;
 		vlan_active.valid = false;
