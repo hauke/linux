@@ -215,6 +215,17 @@ struct gswip_priv {
 	struct gswip_gphy_fw *gphy_fw;
 };
 
+struct gswip_pce_table_entry {
+	u16 index;      // PCE_TBL_ADDR.ADDR = pData->table_index
+	u16 table;      // PCE_TBL_CTRL.ADDR = pData->table
+	u16 key[8];
+	u16 val[5];
+	u16 mask;
+	u8 gmap;
+	bool type;
+	bool valid;
+};
+
 struct gswip_rmon_cnt_desc {
 	unsigned int size;
 	unsigned int offset;
@@ -445,6 +456,93 @@ static int gswip_mdio(struct gswip_priv *priv, struct device_node *mdio_np)
 	ds->slave_mii_bus->phy_mask = ~ds->phys_mii_mask;
 
 	return of_mdiobus_register(ds->slave_mii_bus, mdio_np);
+}
+
+static int gswip_pce_table_entry_read(struct gswip_priv *priv,
+				      struct gswip_pce_table_entry *tbl)
+{
+	int i;
+	int err;
+	u16 crtl;
+
+	err = gswip_switch_r_timeout(priv, GSWIP_PCE_TBL_CTRL,
+				     GSWIP_PCE_TBL_CTRL_BAS);
+	if (err)
+		return err;
+
+	gswip_switch_w(priv, tbl->index, GSWIP_PCE_TBL_ADDR);
+	gswip_switch_mask(priv, GSWIP_PCE_TBL_CTRL_ADDR_MASK |
+				GSWIP_PCE_TBL_CTRL_OPMOD_MASK,
+			  tbl->table | GSWIP_PCE_TBL_CTRL_OPMOD_ADRD |
+				       GSWIP_PCE_TBL_CTRL_BAS,
+			  GSWIP_PCE_TBL_CTRL);
+
+	err = gswip_switch_r_timeout(priv, GSWIP_PCE_TBL_CTRL,
+				     GSWIP_PCE_TBL_CTRL_BAS);
+	if (err)
+		return err;
+
+	for (i = 0; i < ARRAY_SIZE(tbl->key); i++)
+		tbl->key[i] = gswip_switch_r(priv, GSWIP_PCE_TBL_KEY(i));
+
+	for (i = 0; i < ARRAY_SIZE(tbl->val); i++)
+		tbl->val[i] = gswip_switch_r(priv, GSWIP_PCE_TBL_VAL(i));
+
+	tbl->mask = gswip_switch_r(priv, GSWIP_PCE_TBL_MASK);
+
+	crtl = gswip_switch_r(priv, GSWIP_PCE_TBL_CTRL);
+
+	tbl->type = !!(crtl & GSWIP_PCE_TBL_CTRL_TYPE);
+	tbl->valid = !!(crtl & GSWIP_PCE_TBL_CTRL_VLD);
+	tbl->gmap = (crtl & GSWIP_PCE_TBL_CTRL_GMAP_MASK) >> 7;
+
+	return 0;
+}
+
+static int gswip_pce_table_entry_write(struct gswip_priv *priv,
+				       struct gswip_pce_table_entry *tbl)
+{
+	int i;
+	int err;
+	u16 crtl;
+
+	err = gswip_switch_r_timeout(priv, GSWIP_PCE_TBL_CTRL,
+				     GSWIP_PCE_TBL_CTRL_BAS);
+	if (err)
+		return err;
+
+	gswip_switch_w(priv, tbl->index, GSWIP_PCE_TBL_ADDR);
+	gswip_switch_mask(priv, GSWIP_PCE_TBL_CTRL_ADDR_MASK |
+				GSWIP_PCE_TBL_CTRL_OPMOD_MASK,
+			  tbl->table | GSWIP_PCE_TBL_CTRL_OPMOD_ADWR,
+			  GSWIP_PCE_TBL_CTRL);
+
+	for (i = 0; i < ARRAY_SIZE(tbl->key); i++)
+		gswip_switch_w(priv, tbl->key[i], GSWIP_PCE_TBL_KEY(i));
+
+	for (i = 0; i < ARRAY_SIZE(tbl->val); i++)
+		gswip_switch_w(priv, tbl->val[i], GSWIP_PCE_TBL_VAL(i));
+
+	gswip_switch_mask(priv, GSWIP_PCE_TBL_CTRL_ADDR_MASK |
+				GSWIP_PCE_TBL_CTRL_OPMOD_MASK,
+			  tbl->table | GSWIP_PCE_TBL_CTRL_OPMOD_ADWR,
+			  GSWIP_PCE_TBL_CTRL);
+
+	gswip_switch_w(priv, tbl->mask, GSWIP_PCE_TBL_MASK);
+
+	crtl = gswip_switch_r(priv, GSWIP_PCE_TBL_CTRL);
+	crtl &= ~(GSWIP_PCE_TBL_CTRL_TYPE | GSWIP_PCE_TBL_CTRL_VLD |
+		  GSWIP_PCE_TBL_CTRL_GMAP_MASK);
+	if (tbl->type)
+		crtl |= GSWIP_PCE_TBL_CTRL_TYPE;
+	if (tbl->valid)
+		crtl |= GSWIP_PCE_TBL_CTRL_VLD;
+	crtl |= (tbl->gmap << 7) & GSWIP_PCE_TBL_CTRL_GMAP_MASK;
+	crtl |= GSWIP_PCE_TBL_CTRL_BAS;
+	gswip_switch_w(priv, crtl, GSWIP_PCE_TBL_CTRL);
+
+	return gswip_switch_r_timeout(priv, GSWIP_PCE_TBL_CTRL,
+				      GSWIP_PCE_TBL_CTRL_BAS);
 }
 
 static int gswip_port_enable(struct dsa_switch *ds, int port,
