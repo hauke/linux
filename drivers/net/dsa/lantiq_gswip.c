@@ -918,12 +918,13 @@ static int gswip_port_fdb(struct dsa_switch *ds, int port,
 
 	mac_bridge.table = 0x0b;
 	mac_bridge.key_mode = true;
-	mac_bridge.key[0] = addr[0] | (addr[1] << 8);
-	mac_bridge.key[1] = addr[2] | (addr[3] << 8);
-	mac_bridge.key[2] = addr[4] | (addr[5] << 8);
+	mac_bridge.key[0] = addr[5] | (addr[4] << 8);
+	mac_bridge.key[1] = addr[3] | (addr[2] << 8);
+	mac_bridge.key[2] = addr[1] | (addr[0] << 8);
 	mac_bridge.key[3] = idx; /* FID */
 	mac_bridge.val[0] = add ? BIT(port) : 0; /* port map */
 	mac_bridge.val[1] = 0x01; /* static entry */
+	mac_bridge.valid = add;
 
 	err = gswip_pce_table_entry_write(priv, &mac_bridge);
 	if (err)
@@ -964,12 +965,15 @@ static int gswip_port_fdb_dump(struct dsa_switch *ds, int port,
 			return err;
 		}
 
-		addr[0] = mac_bridge.key[0] & 0xff;
-		addr[1] = (mac_bridge.key[0] >> 8) & 0xff;
-		addr[2] = mac_bridge.key[1] & 0xff;
-		addr[3] = (mac_bridge.key[1] >> 8) & 0xff;
-		addr[4] = mac_bridge.key[2] & 0xff;
-		addr[5] = (mac_bridge.key[2] >> 8) & 0xff;
+		if (!mac_bridge.valid)
+			continue;
+
+		addr[5] = mac_bridge.key[0] & 0xff;
+		addr[4] = (mac_bridge.key[0] >> 8) & 0xff;
+		addr[3] = mac_bridge.key[1] & 0xff;
+		addr[2] = (mac_bridge.key[1] >> 8) & 0xff;
+		addr[1] = mac_bridge.key[2] & 0xff;
+		addr[0] = (mac_bridge.key[2] >> 8) & 0xff;
 		if (mac_bridge.val[1] & 0x01) {
 			if (mac_bridge.val[0] & BIT(port))
 				cb(addr, 0, true, data);
