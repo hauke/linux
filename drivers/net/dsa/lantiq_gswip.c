@@ -150,6 +150,7 @@
 #define GSWIP_PCE_GCTRL_0		0x456
 #define  GSWIP_PCE_GCTRL_0_MC_VALID	BIT(3)
 #define  GSWIP_PCE_GCTRL_0_VLAN		BIT(14) /* VLAN aware Switching */
+#define  GSWIP_PCE_GCTRL_0_MTFL		BIT(0)  /* MAC Table Flushing */
 #define GSWIP_PCE_GCTRL_1		0x457
 #define  GSWIP_PCE_GCTRL_1_MAC_GLOCK	BIT(2)	/* MAC Address table lock */
 #define  GSWIP_PCE_GCTRL_1_MAC_GLOCK_MOD	BIT(3) /* Mac address table lock forwarding mode */
@@ -695,10 +696,15 @@ static int gswip_setup(struct dsa_switch *ds)
 	/* VLAN aware Switching */
 	gswip_switch_mask(priv, 0, GSWIP_PCE_GCTRL_0_VLAN, GSWIP_PCE_GCTRL_0);
 
-	/* Mac Address Table Lock */
-	gswip_switch_mask(priv, 0, GSWIP_PCE_GCTRL_1_MAC_GLOCK |
-				   GSWIP_PCE_GCTRL_1_MAC_GLOCK_MOD,
-			  GSWIP_PCE_GCTRL_1);
+	/* Flush MAC Table */
+	gswip_switch_mask(priv, 0, GSWIP_PCE_GCTRL_0_MTFL, GSWIP_PCE_GCTRL_0);
+
+	err = gswip_switch_r_timeout(priv, GSWIP_PCE_GCTRL_0,
+				     GSWIP_PCE_GCTRL_0_MTFL);
+	if (err) {
+		dev_err(priv->dev, "MAC flushing didn't finish\n");
+		return err;
+	}
 
 	gswip_port_enable(ds, cpu_port, NULL);
 	return 0;
