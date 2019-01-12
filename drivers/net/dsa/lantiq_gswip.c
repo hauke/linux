@@ -202,6 +202,10 @@ struct gswip_gphy_fw {
 	char *fw_name;
 };
 
+struct gswip_vlan {
+	struct net_device *bridge;
+};
+
 struct gswip_priv {
 	__iomem void *gswip;
 	__iomem void *mdio;
@@ -211,6 +215,7 @@ struct gswip_priv {
 	struct dsa_switch *ds;
 	struct device *dev;
 	struct regmap *rcu_regmap;
+	struct gswip_vlan vlans[64];
 	int num_gphy_fw;
 	struct gswip_gphy_fw *gphy_fw;
 };
@@ -701,6 +706,181 @@ static enum dsa_tag_protocol gswip_get_tag_protocol(struct dsa_switch *ds,
 	return DSA_TAG_PROTO_GSWIP;
 }
 
+static int gswip_port_bridge_join(struct dsa_switch *ds, int port,
+				  struct net_device *bridge)
+{
+	struct gswip_priv *priv = ds->priv;
+	struct gswip_pce_table_entry vlan_active = {0,};
+	struct gswip_pce_table_entry vlan_mapping = {0,};
+	int idx = -1;
+	int idx_free = -1;
+	int i;
+	int err;
+
+	/* Check if there is already a page for this bridge and by the way
+	 * search for a free slot
+	 */
+	for (i = 0; i < ARRAY_SIZE(priv->vlans); i++) {
+		if (priv->vlans[i].bridge == bridge) {
+			idx = i;
+			break;
+		}
+		if (!priv->vlans[i].bridge && idx_free == -1)
+			idx_free = i;
+	}
+
+	/* If this bridge is not programmed yet, add a Active VLAN table
+	 * entry in a free slot and prepare the VLAN mapping table entry.
+	 */
+	if (idx == -1) {
+		if (idx_free == -1)
+			return -ENOSPC;
+
+		idx = idx_free;
+		vlan_active.index = idx;
+		vlan_active.table = 0x01;
+		vlan_active.key[0] = idx; /* VLAN ID byte */
+		vlan_active.val[0] = idx; /* FID */
+		/* TODO reserved group ?? */
+		vlan_active.valid = true;
+
+		err = gswip_pce_table_entry_write(priv, &vlan_active);
+		if (err) {
+			dev_err(priv->dev, "failed to write active VLAN: %d\n",
+				err);
+			return err;
+		}
+
+		priv->vlans[idx].bridge = bridge;
+
+		vlan_mapping.index = idx;
+		vlan_mapping.table = 0x02;
+		vlan_mapping.key[0] = idx; /* VLAN ID byte */
+	} else {
+		/* Read the existing VLAN mapping entry from the switch */
+		vlan_mapping.index = idx;
+		vlan_mapping.table = 0x02;
+		err = gswip_pce_table_entry_read(priv, &vlan_mapping);
+		if (err) {
+			dev_err(priv->dev, "failed to read VLAN mapping: %d\n",
+				err);
+			return err;
+		}
+
+		if (vlan_mapping.key[0] != idx)
+			dev_err(priv->dev, "unexpected vlan id in mapping: %d\n",
+				vlan_mapping.key[0]);
+	}
+
+	/* Update the VLAN mapping entry and write it to the switch */
+	vlan_mapping.val[0] |= BIT(port);
+	vlan_mapping.val[1] |= BIT(port);
+	err = gswip_pce_table_entry_write(priv, &vlan_mapping);
+	if (err) {
+		dev_err(priv->dev, "failed to write VLAN mapping: %d\n", err);
+		/* In case an Active VLAN was creaetd delete it again */
+		if (vlan_active.valid) {
+			vlan_active.valid = false;
+			err = gswip_pce_table_entry_write(priv, &vlan_active);
+			if (err)
+				dev_err(priv->dev, "failed to delete active VLAN: %d\n",
+					err);
+			priv->vlans[idx].bridge = NULL;
+		}
+
+		return err;
+	}
+
+	return 0;
+}
+
+static void gswip_port_bridge_leave(struct dsa_switch *ds, int port,
+				    struct net_device *bridge)
+{
+	struct gswip_priv *priv = ds->priv;
+	struct gswip_pce_table_entry vlan_active = {0,};
+	struct gswip_pce_table_entry vlan_mapping = {0,};
+	int idx = -1;
+	int i;
+	int err;
+
+	/* Check if there is already a page for this bridge and by the way
+	 * search for a free slot
+	 */
+	for (i = 0; i < ARRAY_SIZE(priv->vlans); i++) {
+		if (priv->vlans[i].bridge == bridge) {
+			idx = i;
+			break;
+		}
+	}
+
+	if (idx == -1) {
+		dev_err(priv->dev, "bridge to leave does not exists\n");
+		return;
+	}
+
+	vlan_mapping.index = idx;
+	vlan_mapping.table = 0x02;
+	err = gswip_pce_table_entry_read(priv, &vlan_mapping);
+	if (err) {
+		dev_err(priv->dev, "failed to read VLAN mapping: %d\n",	err);
+		return;
+	}
+
+	vlan_mapping.val[0] &= ~BIT(port);
+	vlan_mapping.val[1] &= ~BIT(port);
+	err = gswip_pce_table_entry_write(priv, &vlan_mapping);
+	if (err) {
+		dev_err(priv->dev, "failed to write VLAN mapping: %d\n", err);
+		return;
+	}
+
+	if (vlan_mapping.val[0] == 0 && vlan_mapping.val[1] == 0) {
+		vlan_active.index = idx;
+		vlan_active.table = 0x01;
+		vlan_active.valid = false;
+
+		err = gswip_pce_table_entry_write(priv, &vlan_active);
+		if (err) {
+			dev_err(priv->dev, "failed to write active VLAN: %d\n",
+				err);
+			return;
+		}
+		priv->vlans[idx].bridge = NULL;
+	}
+}
+
+static void gswip_port_stp_state_set(struct dsa_switch *ds, int port, u8 state)
+{
+	struct gswip_priv *priv = ds->priv;
+	u32 stp_state;
+
+	switch (state) {
+	case BR_STATE_DISABLED:
+		gswip_switch_mask(priv, GSWIP_SDMA_PCTRL_EN, 0,
+				  GSWIP_SDMA_PCTRLp(port));
+		return;
+	case BR_STATE_BLOCKING:
+	case BR_STATE_LISTENING:
+		stp_state = GSWIP_PCE_PCTRL_0_PSTATE_LISTEN;
+		break;
+	case BR_STATE_LEARNING:
+		stp_state = GSWIP_PCE_PCTRL_0_PSTATE_LEARNING;
+		break;
+	case BR_STATE_FORWARDING:
+		stp_state = GSWIP_PCE_PCTRL_0_PSTATE_FORWARDING;
+		break;
+	default:
+		dev_err(priv->dev, "invalid STP state: %d\n", state);
+		return;
+	}
+
+	gswip_switch_mask(priv, 0, GSWIP_SDMA_PCTRL_EN,
+			  GSWIP_SDMA_PCTRLp(port));
+	gswip_switch_mask(priv, GSWIP_PCE_PCTRL_0_PSTATE_MASK, stp_state,
+			  GSWIP_PCE_PCTRL_0p(port));
+}
+
 static void gswip_phylink_validate(struct dsa_switch *ds, int port,
 				   unsigned long *supported,
 				   struct phylink_link_state *state)
@@ -908,6 +1088,9 @@ static const struct dsa_switch_ops gswip_switch_ops = {
 	.setup			= gswip_setup,
 	.port_enable		= gswip_port_enable,
 	.port_disable		= gswip_port_disable,
+	.port_bridge_join	= gswip_port_bridge_join,
+	.port_bridge_leave	= gswip_port_bridge_leave,
+	.port_stp_state_set	= gswip_port_stp_state_set,
 	.phylink_validate	= gswip_phylink_validate,
 	.phylink_mac_config	= gswip_phylink_mac_config,
 	.phylink_mac_link_down	= gswip_phylink_mac_link_down,
