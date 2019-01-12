@@ -148,13 +148,15 @@
 #define GSWIP_PCE_PMAP2			0x454	/* Default Multicast port map */
 #define GSWIP_PCE_PMAP3			0x455	/* Default Unknown Unicast port map */
 #define GSWIP_PCE_GCTRL_0		0x456
+#define  GSWIP_PCE_GCTRL_0_MTFL		BIT(0)  /* MAC Table Flushing */
 #define  GSWIP_PCE_GCTRL_0_MC_VALID	BIT(3)
 #define  GSWIP_PCE_GCTRL_0_VLAN		BIT(14) /* VLAN aware Switching */
-#define  GSWIP_PCE_GCTRL_0_MTFL		BIT(0)  /* MAC Table Flushing */
 #define GSWIP_PCE_GCTRL_1		0x457
 #define  GSWIP_PCE_GCTRL_1_MAC_GLOCK	BIT(2)	/* MAC Address table lock */
 #define  GSWIP_PCE_GCTRL_1_MAC_GLOCK_MOD	BIT(3) /* Mac address table lock forwarding mode */
 #define GSWIP_PCE_PCTRL_0p(p)		(0x480 + ((p) * 0xA))
+#define  GSWIP_PCE_PCTRL_0_TVM		BIT(5)
+#define  GSWIP_PCE_PCTRL_0_VREP		BIT(6)
 #define  GSWIP_PCE_PCTRL_0_INGRESS	BIT(11)
 #define  GSWIP_PCE_PCTRL_0_PSTATE_LISTEN	0x0
 #define  GSWIP_PCE_PCTRL_0_PSTATE_RX		0x1
@@ -162,6 +164,13 @@
 #define  GSWIP_PCE_PCTRL_0_PSTATE_LEARNING	0x3
 #define  GSWIP_PCE_PCTRL_0_PSTATE_FORWARDING	0x7
 #define  GSWIP_PCE_PCTRL_0_PSTATE_MASK	GENMASK(2, 0)
+#define GSWIP_PCE_VCTRL(p)		(0x485 + ((p) * 0xA))
+#define  GSWIP_PCE_VCTRL_UVR		BIT(0)
+#define  GSWIP_PCE_VCTRL_VIMR		BIT(3)
+#define  GSWIP_PCE_VCTRL_VEMR		BIT(4)
+#define  GSWIP_PCE_VCTRL_VSR		BIT(5)
+#define  GSWIP_PCE_VCTRL_VID0		BIT(6)
+#define GSWIP_PCE_DEFPVID(p)		(0x486 + ((p) * 0xA))
 
 #define GSWIP_MAC_FLEN			0x8C5
 #define GSWIP_MAC_CTRL_2p(p)		(0x905 + ((p) * 0xC))
@@ -569,8 +578,11 @@ static int gswip_port_enable(struct dsa_switch *ds, int port,
 			 GSWIP_FDMA_PCTRLp(port));
 	gswip_switch_mask(priv, 0, GSWIP_SDMA_PCTRL_EN,
 			  GSWIP_SDMA_PCTRLp(port));
-	gswip_switch_mask(priv, 0, GSWIP_PCE_PCTRL_0_INGRESS,
+	gswip_switch_mask(priv, 0, GSWIP_PCE_PCTRL_0_INGRESS | GSWIP_PCE_PCTRL_0_TVM,
 			  GSWIP_PCE_PCTRL_0p(port));
+	/* Use port based VLAN tag */
+	gswip_switch_mask(priv, 0, GSWIP_PCE_VCTRL_VSR,
+			  GSWIP_PCE_VCTRL(port));
 
 	if (!dsa_is_cpu_port(ds, port)) {
 		u32 macconf = GSWIP_MDIO_PHY_LINK_AUTO |
@@ -800,6 +812,7 @@ static int gswip_port_bridge_join(struct dsa_switch *ds, int port,
 
 		return err;
 	}
+	gswip_switch_w(priv, idx, GSWIP_PCE_DEFPVID(port));
 
 	return 0;
 }
