@@ -738,29 +738,33 @@ static int gswip_port_bridge_join(struct dsa_switch *ds, int port,
 	int i;
 	int err;
 
-	/* Check if there is already a page for this bridge and by the way
-	 * search for a free slot
-	 */
+	/* Check if there is already a page for this bridge */
 	for (i = 1; i < ARRAY_SIZE(priv->vlans); i++) {
 		if (priv->vlans[i].bridge == bridge) {
 			idx = i;
 			break;
 		}
-		if (!priv->vlans[i].bridge && idx_free == -1)
-			idx_free = i;
 	}
 
 	/* If this bridge is not programmed yet, add a Active VLAN table
 	 * entry in a free slot and prepare the VLAN mapping table entry.
 	 */
 	if (idx == -1) {
+		/* Look for a free slot */
+		for (i = 1; i < ARRAY_SIZE(priv->vlans); i++) {
+			if (!priv->vlans[i].bridge) {
+				idx_free = i;
+				break;
+			}
+		}
+
 		if (idx_free == -1)
 			return -ENOSPC;
 
 		idx = idx_free;
 		vlan_active.index = idx;
 		vlan_active.table = 0x01;
-		vlan_active.key[0] = idx; /* VLAN ID byte */
+		vlan_active.key[0] = idx; /* VLAN ID byte */ // TODO: is it possible to set this to 0??
 		vlan_active.val[0] = idx; /* FID */
 		/* TODO reserved group ?? */
 		vlan_active.valid = true;
@@ -776,7 +780,8 @@ static int gswip_port_bridge_join(struct dsa_switch *ds, int port,
 
 		vlan_mapping.index = idx;
 		vlan_mapping.table = 0x02;
-		vlan_mapping.val[0] = idx; /* VLAN ID byte */
+		/* VLAN ID byte, maps to the VLAN ID of vlan active table */
+		vlan_mapping.val[0] = idx;
 	} else {
 		/* Read the existing VLAN mapping entry from the switch */
 		vlan_mapping.index = idx;
@@ -788,9 +793,11 @@ static int gswip_port_bridge_join(struct dsa_switch *ds, int port,
 			return err;
 		}
 
-		if (vlan_mapping.val[0] != idx)
+		if (vlan_mapping.val[0] != idx) {
 			dev_err(priv->dev, "unexpected vlan id in mapping: %d\n",
 				vlan_mapping.val[0]);
+			return -EIO;
+		}
 	}
 
 	/* Update the VLAN mapping entry and write it to the switch */
@@ -825,9 +832,7 @@ static void gswip_port_bridge_leave(struct dsa_switch *ds, int port,
 	int i;
 	int err;
 
-	/* Check if there is already a page for this bridge and by the way
-	 * search for a free slot
-	 */
+	/* Find the index for the biven bridge */
 	for (i = 1; i < ARRAY_SIZE(priv->vlans); i++) {
 		if (priv->vlans[i].bridge == bridge) {
 			idx = i;
@@ -855,6 +860,7 @@ static void gswip_port_bridge_leave(struct dsa_switch *ds, int port,
 		return;
 	}
 
+	/* In case all ports are removed from the bridge, remove the VLAN */
 	if (vlan_mapping.val[1] == 0) {
 		vlan_active.index = idx;
 		vlan_active.table = 0x01;
