@@ -665,7 +665,6 @@ static int gswip_setup(struct dsa_switch *ds)
 	int i;
 	int err;
 
-WARN_ON(1);
 	gswip_switch_w(priv, GSWIP_SWRES_R0, GSWIP_SWRES);
 	usleep_range(5000, 10000);
 	gswip_switch_w(priv, 0, GSWIP_SWRES);
