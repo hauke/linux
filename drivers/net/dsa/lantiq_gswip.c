@@ -589,8 +589,7 @@ static int gswip_add_signle_port_br(struct gswip_priv *priv, int port, bool add,
 	vlan_active.table = 0x01;
 	vlan_active.key[0] = 0; /* vid */
 	vlan_active.val[0] = port + 1 /* fid */;
-	if (reserve)
-		vlan_active.val[0] |= BIT(8);
+	vlan_active.val[0] |= BIT(8);
 	vlan_active.valid = add;
 	err = gswip_pce_table_entry_write(priv, &vlan_active);
 	if (err) {
@@ -603,6 +602,7 @@ static int gswip_add_signle_port_br(struct gswip_priv *priv, int port, bool add,
 	vlan_mapping.val[0] = 0 /* vid */;
 	if (add)
 		vlan_mapping.val[1] = BIT(port) | BIT(cpu_port);
+	vlan_mapping.val[2] = 0;
 	err = gswip_pce_table_entry_write(priv, &vlan_mapping);
 	if (err) {
 		dev_err(priv->dev, "failed to write VLAN mapping: %d\n", err);
@@ -638,7 +638,7 @@ printk("%s:%i: err: %i, p_pvid %i\n", __func__, __LINE__, err, p_pvid);
 			  GSWIP_PCE_VCTRL(port));
 
 	/* enable port fetch/store dma & VLAN Modification */
-	gswip_switch_mask(priv, 0, GSWIP_PCE_PCTRL_0_INGRESS | GSWIP_PCE_PCTRL_0_TVM,
+	gswip_switch_mask(priv, 0, GSWIP_PCE_PCTRL_0_INGRESS,
 			  GSWIP_PCE_PCTRL_0p(port));
 	gswip_switch_mask(priv, 0, GSWIP_FDMA_PCTRL_EN |
 				   GSWIP_FDMA_PCTRL_VLANMOD_BOTH,
@@ -800,7 +800,6 @@ static int gswip_port_vlan_single_add(struct gswip_priv *priv,
 	int idx = -1;
 	int i;
 	int err;
-	int pvid_idx_old;
 
 	/* Check if there is already a page for this bridge */
 	for (i = max_ports; i < ARRAY_SIZE(priv->vlans); i++) {
@@ -825,7 +824,8 @@ static int gswip_port_vlan_single_add(struct gswip_priv *priv,
 			vlan_active.table = 0x01;
 			vlan_active.key[0] = vid;
 			vlan_active.val[0] = fid;
-			/* TODO reserved group ?? */
+			if (vid == 0)
+				vlan_active.val[0] |= BIT(8);
 			vlan_active.valid = true;
 
 printk("%s:%i: vlan_active: id: %i, vid: %i, FID: 0x%x, valid: %i\n", __func__, __LINE__, idx, vlan_active.key[0], vlan_active.val[0], vlan_active.valid);
@@ -869,6 +869,8 @@ printk("%s:%i: vlan_active: id: %i, vid: %i, FID: 0x%x, valid: %i\n", __func__, 
 		vlan_active.table = 0x01;
 		vlan_active.key[0] = vid;
 		vlan_active.val[0] = fid;
+		if (vid == 0)
+			vlan_active.val[0] |= BIT(8);
 		/* TODO reserved group ?? */
 		vlan_active.valid = true;
 
@@ -905,9 +907,14 @@ printk("%s:%i: vlan_mapping: id: %i, vid: %i, PortMap: 0x%x, TagMap: 0x%x\n", __
 	if (vlan_aware)
 		vlan_mapping.val[0] = vid;
 	/* Update the VLAN mapping entry and write it to the switch */
+	vlan_mapping.val[1] |= BIT(6);
+	vlan_mapping.val[2] |= BIT(6);
 	vlan_mapping.val[1] |= BIT(port);
-	if (untagged)
+	if (untagged) {
+		vlan_mapping.val[2] &= ~BIT(port);
+	} else {
 		vlan_mapping.val[2] |= BIT(port);
+	}
 printk("%s:%i: vlan_mapping: id: %i, vid: %i, PortMap: 0x%x, TagMap: 0x%x\n", __func__, __LINE__, idx, vlan_mapping.val[0], vlan_mapping.val[1], vlan_mapping.val[2]);
 	err = gswip_pce_table_entry_write(priv, &vlan_mapping);
 	if (err) {
@@ -926,16 +933,24 @@ printk("%s:%i: vlan_active: id: %i, vid: %i, FID: 0x%x, valid: %i\n", __func__, 
 		return err;
 	}
 
-	pvid_idx_old = 	gswip_switch_r(priv, GSWIP_PCE_DEFPVID(port));
-
 	if (pvid) {
-		if (idx != pvid_idx_old) {
-			gswip_add_signle_port_br(priv, port, true, true);
-			gswip_switch_w(priv, idx, GSWIP_PCE_DEFPVID(port));
-		}
-	} else {
-		if (pvid_idx_old == idx) {
-			gswip_add_signle_port_br(priv, port, false, false);
+printk("%s:%i: pvid: id: %i, vid: %i, port: %i\n", __func__, __LINE__, idx, vid, port);
+		gswip_switch_w(priv, idx, GSWIP_PCE_DEFPVID(port));
+		for (i = 0; i < ARRAY_SIZE(priv->vlans); i++) {
+			vlan_mapping.index = i;
+			vlan_mapping.table = 0x02;
+			err = gswip_pce_table_entry_read(priv, &vlan_mapping);
+			if (err)
+				dev_err(priv->dev, "failed to read vlan mapping: %d\n",
+					err);
+			if (vlan_mapping.val[0] == 0) {
+				vlan_mapping.val[1] &= ~BIT(port);
+				vlan_mapping.val[2] &= ~BIT(port);
+				err = gswip_pce_table_entry_write(priv, &vlan_mapping);
+				if (err)
+					dev_err(priv->dev, "failed to write vlan mapping: %d\n",
+						err);
+			}
 		}
 	}
 
