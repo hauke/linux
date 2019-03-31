@@ -572,7 +572,7 @@ static int gswip_pce_table_entry_write(struct gswip_priv *priv,
  * packages between the LAN ports when no explicit
  * bridge is configured.
  */
-static int gswip_add_signle_port_br(struct gswip_priv *priv, int port, bool add)
+static int gswip_add_signle_port_br(struct gswip_priv *priv, int port, bool add, bool reserve)
 {
 	struct gswip_pce_table_entry vlan_active = {0,};
 	struct gswip_pce_table_entry vlan_mapping = {0,};
@@ -589,6 +589,8 @@ static int gswip_add_signle_port_br(struct gswip_priv *priv, int port, bool add)
 	vlan_active.table = 0x01;
 	vlan_active.key[0] = 0; /* vid */
 	vlan_active.val[0] = port + 1 /* fid */;
+	if (reserve)
+		vlan_active.val[0] |= BIT(8);
 	vlan_active.valid = add;
 	err = gswip_pce_table_entry_write(priv, &vlan_active);
 	if (err) {
@@ -614,12 +616,16 @@ static int gswip_port_enable(struct dsa_switch *ds, int port,
 			     struct phy_device *phydev)
 {
 	struct gswip_priv *priv = ds->priv;
+	struct net_device *ndev = dsa_dev_to_net_device(ds->dev);
+	u16 p_pvid;
 
 	u32 macconf;
 	int err;
 
 	if (!dsa_is_cpu_port(ds, port)) {
-		err = gswip_add_signle_port_br(priv, port, true);
+		err = br_vlan_get_pvid(ndev, &p_pvid);
+printk("%s:%i: err: %i, p_pvid %i\n", __func__, __LINE__, err, p_pvid);
+		err = gswip_add_signle_port_br(priv, port, true, !err);
 		if (err)
 			return err;
 	}
@@ -794,6 +800,7 @@ static int gswip_port_vlan_single_add(struct gswip_priv *priv,
 	int idx = -1;
 	int i;
 	int err;
+	int pvid_idx_old;
 
 	/* Check if there is already a page for this bridge */
 	for (i = max_ports; i < ARRAY_SIZE(priv->vlans); i++) {
@@ -919,8 +926,18 @@ printk("%s:%i: vlan_active: id: %i, vid: %i, FID: 0x%x, valid: %i\n", __func__, 
 		return err;
 	}
 
-	if (pvid)
-		gswip_switch_w(priv, idx, GSWIP_PCE_DEFPVID(port));
+	pvid_idx_old = 	gswip_switch_r(priv, GSWIP_PCE_DEFPVID(port));
+
+	if (pvid) {
+		if (idx != pvid_idx_old) {
+			gswip_add_signle_port_br(priv, port, true, true);
+			gswip_switch_w(priv, idx, GSWIP_PCE_DEFPVID(port));
+		}
+	} else {
+		if (pvid_idx_old == idx) {
+			gswip_add_signle_port_br(priv, port, false, false);
+		}
+	}
 
 	return 0;
 }
@@ -1000,7 +1017,7 @@ printk("%s:%i: port: %i, bridge: %px\n", __func__, __LINE__, port, bridge);
 	err = gswip_port_vlan_single_add(priv, bridge, port, 0, 0, false, true, false);
 	if (err)
 		return err;
-	return gswip_add_signle_port_br(priv, port, false);
+	return gswip_add_signle_port_br(priv, port, false, false);
 }
 
 static void gswip_port_bridge_leave(struct dsa_switch *ds, int port,
@@ -1009,7 +1026,7 @@ static void gswip_port_bridge_leave(struct dsa_switch *ds, int port,
 	struct gswip_priv *priv = ds->priv;
 printk("%s:%i: port: %i, bridge: %px\n", __func__, __LINE__, port, bridge);
 
-	gswip_add_signle_port_br(priv, port, true);
+	gswip_add_signle_port_br(priv, port, true, false);
 	gswip_port_vlan_single_remove(priv, bridge, port, 0, 0, false);
 }
 
@@ -1040,7 +1057,7 @@ static int gswip_port_vlan_prepare(struct dsa_switch *ds, int port,
 printk("%s:%i: port: %i, bridge: %px\n", __func__, __LINE__, port, bridge);
 
 	/* We only support VLAN filtering on bridges */
-	if (!bridge)
+	if (!dsa_is_cpu_port(ds, port) && !bridge)
 		return -EOPNOTSUPP;
 
 	return 0;
@@ -1057,6 +1074,14 @@ static void gswip_port_vlan_add(struct dsa_switch *ds, int port,
 	u16 vid;
 	int i;
 	int fid = -1;
+	
+	/* We have to receive all packets on the CPU port and should not
+	 * do any VLAN filtering here. This is also called with bridge
+	 * NULL and then we do not know for which bridge to configure
+	 * this.
+	 */
+	if (dsa_is_cpu_port(ds, port))
+		return;
 
 	/* Find the index for the biven bridge */
 	for (i = cpu_port; i < ARRAY_SIZE(priv->vlans); i++) {
@@ -1084,6 +1109,14 @@ static int gswip_port_vlan_del(struct dsa_switch *ds, int port,
 	bool pvid = vlan->flags & BRIDGE_VLAN_INFO_PVID;
 	u16 vid;
 	int err;
+
+	/* We have to receive all packets on the CPU port and should not
+	 * do any VLAN filtering here. This is also called with bridge
+	 * NULL and then we do not know for which bridge to configure
+	 * this.
+	 */
+	if (dsa_is_cpu_port(ds, port))
+		return 0;
 
 printk("%s:%i: port: %i, bridge: %px, pvid: %i\n", __func__, __LINE__, port, bridge, pvid);
 
