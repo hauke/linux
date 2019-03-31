@@ -618,6 +618,8 @@ static int gswip_port_enable(struct dsa_switch *ds, int port,
 	u32 macconf;
 	int err;
 
+printk("%s:%i: port: %i, \n", __func__, __LINE__, port);
+
 	if (!dsa_is_cpu_port(ds, port)) {
 		err = gswip_add_signle_port_br(priv, port, true);
 		if (err)
@@ -626,10 +628,6 @@ static int gswip_port_enable(struct dsa_switch *ds, int port,
 
 	/* RMON Counter Enable for port */
 	gswip_switch_w(priv, GSWIP_BM_PCFG_CNTEN, GSWIP_BM_PCFGp(port));
-
-	/* Use port based VLAN tag */
-//	gswip_switch_mask(priv, 0, GSWIP_PCE_VCTRL_VSR,
-//			  GSWIP_PCE_VCTRL(port));
 
 	/* enable port fetch/store dma & VLAN Modification */
 	gswip_switch_mask(priv, 0, GSWIP_FDMA_PCTRL_EN |
@@ -657,6 +655,8 @@ static int gswip_port_enable(struct dsa_switch *ds, int port,
 static void gswip_port_disable(struct dsa_switch *ds, int port)
 {
 	struct gswip_priv *priv = ds->priv;
+
+printk("%s:%i: port: %i, \n", __func__, __LINE__, port);
 
 	if (!dsa_is_cpu_port(ds, port)) {
 		gswip_mdio_mask(priv, GSWIP_MDIO_PHY_LINK_DOWN,
@@ -1006,7 +1006,7 @@ static int gswip_port_bridge_join(struct dsa_switch *ds, int port,
 	int err;
 printk("%s:%i: port: %i, bridge: %px\n", __func__, __LINE__, port, bridge);
 
-	err = gswip_port_vlan_single_add(priv, bridge, port, 0, 0, false, true, false);
+	err = gswip_port_vlan_single_add(priv, bridge, port, 0, 0, true, true, false);
 	if (err)
 		return err;
 	return gswip_add_signle_port_br(priv, port, false);
@@ -1034,12 +1034,16 @@ printk("%s:%i: port: %i, vlan_filtering: %i\n", __func__, __LINE__, port, vlan_f
 				  GSWIP_PCE_VCTRL_VSR,
 				  GSWIP_PCE_VCTRL_UVR | GSWIP_PCE_VCTRL_VIMR | GSWIP_PCE_VCTRL_VEMR,
 				  GSWIP_PCE_VCTRL(port));
+		gswip_switch_mask(priv, GSWIP_PCE_PCTRL_0_TVM, 0,
+				  GSWIP_PCE_PCTRL_0p(port));
 	} else {
 		/* Use port based VLAN tag */
 		gswip_switch_mask(priv,
 				  GSWIP_PCE_VCTRL_UVR | GSWIP_PCE_VCTRL_VIMR | GSWIP_PCE_VCTRL_VEMR,
 				  GSWIP_PCE_VCTRL_VSR,
 				  GSWIP_PCE_VCTRL(port));
+		gswip_switch_mask(priv, 0, GSWIP_PCE_PCTRL_0_TVM,
+				  GSWIP_PCE_PCTRL_0p(port));
 	}
 
 	return 0;
