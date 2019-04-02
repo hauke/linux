@@ -993,6 +993,7 @@ printk("%s:%i: vlan_active: id: %i, vid: %i, FID: 0x%x, valid: %i\n", __func__, 
 		priv->vlans[idx].bridge = NULL;
 	}
 
+	/* GSWIP 2.2 (GRX300) and later programm here the VID directly. */
 	if (pvid)
 		gswip_switch_w(priv, 0, GSWIP_PCE_DEFPVID(port));
 
