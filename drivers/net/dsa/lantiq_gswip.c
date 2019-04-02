@@ -709,6 +709,9 @@ static int gswip_pce_load_microcode(struct gswip_priv *priv)
 	return 0;
 }
 
+static int gswip_port_vlan_filtering(struct dsa_switch *ds, int port,
+				     bool vlan_filtering);
+
 static int gswip_setup(struct dsa_switch *ds)
 {
 	struct gswip_priv *priv = ds->priv;
@@ -721,8 +724,10 @@ static int gswip_setup(struct dsa_switch *ds)
 	gswip_switch_w(priv, 0, GSWIP_SWRES);
 
 	/* disable port fetch/store dma on all ports */
-	for (i = 0; i < priv->hw_info->max_ports; i++)
+	for (i = 0; i < priv->hw_info->max_ports; i++) {
 		gswip_port_disable(ds, i);
+		gswip_port_vlan_filtering(ds, i, false);
+	}
 
 	/* enable Switch */
 	gswip_mdio_mask(priv, 0, GSWIP_MDIO_GLOB_ENABLE, GSWIP_MDIO_GLOB);
