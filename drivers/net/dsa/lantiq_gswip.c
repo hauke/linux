@@ -798,6 +798,7 @@ static int gswip_port_vlan_single_add(struct gswip_priv *priv,
 	struct gswip_pce_table_entry vlan_active = {0,};
 	struct gswip_pce_table_entry vlan_mapping = {0,};
 	unsigned int max_ports = priv->hw_info-> max_ports;
+	unsigned int cpu_port = priv->hw_info->cpu_port;
 	int idx = -1;
 	int i;
 	int err;
@@ -905,8 +906,8 @@ printk("%s:%i: vlan_mapping: id: %i, vid: %i, PortMap: 0x%x, TagMap: 0x%x\n", __
 	if (vlan_aware)
 		vlan_mapping.val[0] = vid;
 	/* Update the VLAN mapping entry and write it to the switch */
-	vlan_mapping.val[1] |= BIT(6);
-	vlan_mapping.val[2] |= BIT(6);
+	vlan_mapping.val[1] |= BIT(cpu_port);
+	vlan_mapping.val[2] |= BIT(cpu_port);
 	vlan_mapping.val[1] |= BIT(port);
 	if (untagged) {
 		vlan_mapping.val[2] &= ~BIT(port);
@@ -945,13 +946,14 @@ static int gswip_port_vlan_single_remove(struct gswip_priv *priv,
 {
 	struct gswip_pce_table_entry vlan_active = {0,};
 	struct gswip_pce_table_entry vlan_mapping = {0,};
+	unsigned int max_ports = priv->hw_info-> max_ports;
 	unsigned int cpu_port = priv->hw_info->cpu_port;
 	int idx = -1;
 	int i;
 	int err;
 
 	/* Check if there is already a page for this bridge */
-	for (i = cpu_port; i < ARRAY_SIZE(priv->vlans); i++) {
+	for (i = max_ports; i < ARRAY_SIZE(priv->vlans); i++) {
 		if (priv->vlans[i].bridge == bridge &&
 		    (!vlan_aware || priv->vlans[i].vid == vid)) {
 			idx = i;
@@ -983,10 +985,12 @@ printk("%s:%i: vlan_mapping: id: %i, vid: %i, PortMap: 0x%x, TagMap: 0x%x\n", __
 	}
 
 	/* In case all ports are removed from the bridge, remove the VLAN */
-	if (vlan_mapping.val[1] == 0) {
+	if ((vlan_mapping.val[1] & ~BIT(cpu_port)) == 0) {
 		vlan_active.index = idx;
 		vlan_active.table = 0x01;
 		vlan_active.valid = false;
+		vlan_mapping.val[1] = 0;
+		vlan_mapping.val[2] = 0;
 
 printk("%s:%i: vlan_active: id: %i, vid: %i, FID: 0x%x, valid: %i\n", __func__, __LINE__, idx, vlan_active.key[0], vlan_active.val[0], vlan_active.valid);
 		err = gswip_pce_table_entry_write(priv, &vlan_active);
@@ -1012,6 +1016,10 @@ static int gswip_port_bridge_join(struct dsa_switch *ds, int port,
 	int err;
 printk("%s:%i: port: %i, bridge: %px\n", __func__, __LINE__, port, bridge);
 
+	/* When the bridge uses VLAN filtering we have to configure VLAN specific bridge */
+	if (br_vlan_enabled(bridge))
+		return 0;
+
 	err = gswip_port_vlan_single_add(priv, bridge, port, 0, 0, true, true, false);
 	if (err)
 		return err;
@@ -1023,6 +1031,10 @@ static void gswip_port_bridge_leave(struct dsa_switch *ds, int port,
 {
 	struct gswip_priv *priv = ds->priv;
 printk("%s:%i: port: %i, bridge: %px\n", __func__, __LINE__, port, bridge);
+
+	/* When the bridge uses VLAN filtering we have to configure VLAN specific bridge */
+	if (br_vlan_enabled(bridge))
+		return 0;
 
 	gswip_add_signle_port_br(priv, port, true);
 	gswip_port_vlan_single_remove(priv, bridge, port, 0, 0, false);
