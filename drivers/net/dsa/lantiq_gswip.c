@@ -4,7 +4,24 @@
  *
  * Copyright (C) 2010 Lantiq Deutschland
  * Copyright (C) 2012 John Crispin <john@phrozen.org>
- * Copyright (C) 2017 - 2018 Hauke Mehrtens <hauke@hauke-m.de>
+ * Copyright (C) 2017 - 2019 Hauke Mehrtens <hauke@hauke-m.de>
+ *
+ * The VLAN an bridge model the GSWIP hardware uses does not directly
+ * matches the model DSA uses.
+ *
+ * The hardware has 64 possible table entries for bridges with one VLAN
+ * ID, a flow id and a list of ports for each bridge. All entries which
+ * match the same flow ID are combined in the mac learning table, they
+ * act as one global bridge.
+ *
+ * The CPU port is in no bridge, but it gets all the exception frames
+ * which do not match any forwarding rule. This make sit possible to
+ * handle all the special cases easily in software.
+ * At the initialization the driver allocates one bridge table entry for
+ * each switch port which is used when the port is used without an
+ * explicit bridge. We forward all frames and ignore the special VLAN
+ * filtering settings when the single port is used. This entry is
+ * deactivated when the bridge is added to a bridge.
  */
 
 #include <linux/clk.h>
