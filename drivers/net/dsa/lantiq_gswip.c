@@ -808,61 +808,20 @@ static enum dsa_tag_protocol gswip_get_tag_protocol(struct dsa_switch *ds,
 }
 
 static int gswip_port_vlan_single_add(struct gswip_priv *priv,
-				      struct net_device *bridge, int port,
-				      u16 vid, int fid, bool untagged,
-				      bool pvid, bool vlan_aware)
+				      struct net_device *bridge, int port)
 {
 	struct gswip_pce_table_entry vlan_active = {0,};
 	struct gswip_pce_table_entry vlan_mapping = {0,};
 	unsigned int max_ports = priv->hw_info-> max_ports;
-	unsigned int cpu_port = priv->hw_info->cpu_port;
 	int idx = -1;
 	int i;
 	int err;
 
 	/* Check if there is already a page for this bridge */
 	for (i = max_ports; i < ARRAY_SIZE(priv->vlans); i++) {
-		if (priv->vlans[i].bridge == bridge &&
-		    (!vlan_aware || priv->vlans[i].vid == vid)) {
+		if (priv->vlans[i].bridge == bridge) {
 			idx = i;
 			break;
-		}
-	}
-
-	if (idx == -1 && vlan_aware) {
-		for (i = max_ports; i < ARRAY_SIZE(priv->vlans); i++) {
-			if (priv->vlans[i].bridge == bridge &&
-			    !priv->vlans[i].vlan_aware) {
-				idx = i;
-				break;
-			}
-		}
-
-		if (idx != -1) {
-			vlan_active.index = idx;
-			vlan_active.table = 0x01;
-			vlan_active.key[0] = vid;
-			vlan_active.val[0] = fid;
-			/* TODO reserved group ?? */
-			vlan_active.valid = true;
-
-printk("%s:%i: vlan_active: id: %i, vid: %i, FID: 0x%x, valid: %i\n", __func__, __LINE__, idx, vlan_active.key[0], vlan_active.val[0], vlan_active.valid);
-			err = gswip_pce_table_entry_write(priv, &vlan_active);
-			if (err) {
-				dev_err(priv->dev, "failed to write active VLAN: %d\n",
-					err);
-				return err;
-			}
-
-			priv->vlans[idx].bridge = bridge;
-			priv->vlans[idx].vid = vid;
-			priv->vlans[idx].fid = fid;
-			priv->vlans[idx].vlan_aware = true;
-
-			vlan_mapping.index = idx;
-			vlan_mapping.table = 0x02;
-			/* VLAN ID byte, maps to the VLAN ID of vlan active table */
-			vlan_mapping.val[0] = vid;
 		}
 	}
 
@@ -881,8 +840,111 @@ printk("%s:%i: vlan_active: id: %i, vid: %i, FID: 0x%x, valid: %i\n", __func__, 
 		if (idx == -1)
 			return -ENOSPC;
 
-		if (!vlan_aware)
+		vlan_active.index = idx;
+		vlan_active.table = 0x01;
+		vlan_active.key[0] = 0;
+		vlan_active.val[0] = idx; /* flow id */
+		/* TODO reserved group ?? */
+		vlan_active.valid = true;
+
+printk("%s:%i: vlan_active: id: %i, vid: %i, FID: 0x%x, valid: %i\n", __func__, __LINE__, idx, vlan_active.key[0], vlan_active.val[0], vlan_active.valid);
+		err = gswip_pce_table_entry_write(priv, &vlan_active);
+		if (err) {
+			dev_err(priv->dev, "failed to write active VLAN: %d\n",
+				err);
+			return err;
+		}
+
+		priv->vlans[idx].bridge = bridge;
+		priv->vlans[idx].vid = 0;
+		priv->vlans[idx].fid = idx;
+		priv->vlans[idx].vlan_aware = false;
+
+		vlan_mapping.index = idx;
+		vlan_mapping.table = 0x02;
+		/* VLAN ID byte, maps to the VLAN ID of vlan active table */
+		vlan_mapping.val[0] = 0;
+	} else {
+		/* Read the existing VLAN mapping entry from the switch */
+		vlan_mapping.index = idx;
+		vlan_mapping.table = 0x02;
+		err = gswip_pce_table_entry_read(priv, &vlan_mapping);
+printk("%s:%i: vlan_mapping: id: %i, vid: %i, PortMap: 0x%x, TagMap: 0x%x\n", __func__, __LINE__, idx, vlan_mapping.val[0], vlan_mapping.val[1], vlan_mapping.val[2]);
+		if (err) {
+			dev_err(priv->dev, "failed to read VLAN mapping: %d\n",
+				err);
+			return err;
+		}
+	}
+
+	/* Update the VLAN mapping entry and write it to the switch */
+	vlan_mapping.val[1] |= BIT(port);
+printk("%s:%i: vlan_mapping: id: %i, vid: %i, PortMap: 0x%x, TagMap: 0x%x\n", __func__, __LINE__, idx, vlan_mapping.val[0], vlan_mapping.val[1], vlan_mapping.val[2]);
+	err = gswip_pce_table_entry_write(priv, &vlan_mapping);
+	if (err) {
+		dev_err(priv->dev, "failed to write VLAN mapping: %d\n", err);
+		/* In case an Active VLAN was creaetd delete it again */
+		if (vlan_active.valid) {
+			vlan_active.valid = false;
+printk("%s:%i: vlan_active: id: %i, vid: %i, FID: 0x%x, valid: %i\n", __func__, __LINE__, idx, vlan_active.key[0], vlan_active.val[0], vlan_active.valid);
+			err = gswip_pce_table_entry_write(priv, &vlan_active);
+			if (err)
+				dev_err(priv->dev, "failed to delete active VLAN: %d\n",
+					err);
+			priv->vlans[idx].bridge = NULL;
+		}
+		return err;
+	}
+
+	gswip_switch_w(priv, 0, GSWIP_PCE_DEFPVID(port));
+	return 0;
+}
+
+
+static int gswip_port_vlan_single_add_vlan(struct gswip_priv *priv,
+				      struct net_device *bridge, int port,
+				      u16 vid, bool untagged,
+				      bool pvid)
+{
+	struct gswip_pce_table_entry vlan_active = {0,};
+	struct gswip_pce_table_entry vlan_mapping = {0,};
+	unsigned int max_ports = priv->hw_info-> max_ports;
+	int idx = -1;
+	int fid = -1;
+	int i;
+	int err;
+
+	/* Check if there is already a page for this bridge */
+	for (i = max_ports; i < ARRAY_SIZE(priv->vlans); i++) {
+		if (priv->vlans[i].bridge == bridge) {
+			if (fid != priv->vlans[i].fid)
+				dev_err(priv->dev, "one bridge with multiple flow ids\n");
+			fid = priv->vlans[i].fid;
+			if (priv->vlans[i].vid == vid) {
+				idx = i;
+				break;
+			}
+		}
+	}
+
+	/* If this bridge is not programmed yet, add a Active VLAN table
+	 * entry in a free slot and prepare the VLAN mapping table entry.
+	 */
+	if (idx == -1) {
+		/* Look for a free slot */
+		for (i = max_ports; i < ARRAY_SIZE(priv->vlans); i++) {
+			if (!priv->vlans[i].bridge) {
+				idx = i;
+				break;
+			}
+		}
+
+		if (idx == -1)
+			return -ENOSPC;
+
+		if (fid == -1)
 			fid = idx;
+
 		vlan_active.index = idx;
 		vlan_active.table = 0x01;
 		vlan_active.key[0] = vid;
@@ -901,7 +963,7 @@ printk("%s:%i: vlan_active: id: %i, vid: %i, FID: 0x%x, valid: %i\n", __func__, 
 		priv->vlans[idx].bridge = bridge;
 		priv->vlans[idx].vid = vid;
 		priv->vlans[idx].fid = fid;
-		priv->vlans[idx].vlan_aware = vlan_aware;
+		priv->vlans[idx].vlan_aware = true;
 
 		vlan_mapping.index = idx;
 		vlan_mapping.table = 0x02;
@@ -920,11 +982,8 @@ printk("%s:%i: vlan_mapping: id: %i, vid: %i, PortMap: 0x%x, TagMap: 0x%x\n", __
 		}
 	}
 
-	if (vlan_aware)
-		vlan_mapping.val[0] = vid;
+	vlan_mapping.val[0] = vid;
 	/* Update the VLAN mapping entry and write it to the switch */
-	vlan_mapping.val[1] |= BIT(cpu_port);
-	vlan_mapping.val[2] |= BIT(cpu_port);
 	vlan_mapping.val[1] |= BIT(port);
 	if (untagged) {
 		vlan_mapping.val[2] &= ~BIT(port);
@@ -1035,7 +1094,7 @@ printk("%s:%i: port: %i, bridge: %px\n", __func__, __LINE__, port, bridge);
 
 	/* When the bridge uses VLAN filtering we have to configure VLAN specific bridge */
 	if (!br_vlan_enabled(bridge)) {
-		err = gswip_port_vlan_single_add(priv, bridge, port, 0, 0, true, true, false);
+		err = gswip_port_vlan_single_add(priv, bridge, port);
 		if (err)
 			return err;
 	}
@@ -1052,7 +1111,7 @@ printk("%s:%i: port: %i, bridge: %px\n", __func__, __LINE__, port, bridge);
 
 	/* When the bridge uses VLAN filtering we have to configure VLAN specific bridge */
 	if (!br_vlan_enabled(bridge))
-		gswip_port_vlan_single_remove(priv, bridge, port, 0, 0, false);
+		gswip_port_vlan_single_remove(priv, bridge, port, 0, true, false);
 }
 
 static void gswip_port_fast_age(struct dsa_switch *ds, int port)
@@ -1138,12 +1197,9 @@ static void gswip_port_vlan_add(struct dsa_switch *ds, int port,
 {
 	struct gswip_priv *priv = ds->priv;
 	struct net_device *bridge = dsa_to_port(ds, port)->bridge_dev;
-	unsigned int cpu_port = priv->hw_info->cpu_port;
 	bool untagged = vlan->flags & BRIDGE_VLAN_INFO_UNTAGGED;
 	bool pvid = vlan->flags & BRIDGE_VLAN_INFO_PVID;
 	u16 vid;
-	int i;
-	int fid = -1;
 	
 	/* We have to receive all packets on the CPU port and should not
 	 * do any VLAN filtering here. This is also called with bridge
@@ -1153,21 +1209,10 @@ static void gswip_port_vlan_add(struct dsa_switch *ds, int port,
 	if (dsa_is_cpu_port(ds, port))
 		return;
 
-	/* Find the index for the biven bridge */
-	for (i = cpu_port; i < ARRAY_SIZE(priv->vlans); i++) {
-		if (priv->vlans[i].bridge == bridge) {
-			fid = priv->vlans[i].fid;
-			break;
-		}
-	}
-
-printk("%s:%i: port: %i, bridge: %px, untagged: %i, pvid: %i, fid: %i\n", __func__, __LINE__, port, bridge, untagged, pvid, fid);
-
-	if (fid == -1)
-		return;
+printk("%s:%i: port: %i, bridge: %px, untagged: %i, pvid: %i\n", __func__, __LINE__, port, bridge, untagged, pvid);
 
 	for (vid = vlan->vid_begin; vid <= vlan->vid_end; ++vid) {
-		gswip_port_vlan_single_add(priv, bridge, port, vid, fid, untagged, pvid, true);
+		gswip_port_vlan_single_add_vlan(priv, bridge, port, vid, untagged, pvid);
 	}
 }
 
