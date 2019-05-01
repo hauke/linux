@@ -1159,12 +1159,11 @@ static int gswip_port_vlan_filtering(struct dsa_switch *ds, int port,
 				     bool vlan_filtering)
 {
 	struct gswip_priv *priv = ds->priv;
-	struct dsa_port *dsa_port = dsa_to_port(ds, port);
+	struct net_device *bridge = dsa_to_port(ds, port)->bridge_dev;
 printk("%s:%i: port: %i, vlan_filtering: %i\n", __func__, __LINE__, port, vlan_filtering);
 
 	/* Do not allow chaning the vlan filtering options while already in bridge */
-	if (!!(priv->port_vlan_filter & BIT(port)) != vlan_filtering &&
-	    dsa_port->bridge_dev)
+	if (!!(priv->port_vlan_filter & BIT(port)) != vlan_filtering && bridge)
 		return -EIO;
 
 	if (vlan_filtering) {
@@ -1191,13 +1190,47 @@ printk("%s:%i: port: %i, vlan_filtering: %i\n", __func__, __LINE__, port, vlan_f
 static int gswip_port_vlan_prepare(struct dsa_switch *ds, int port,
 				   const struct switchdev_obj_port_vlan *vlan)
 {
+	struct gswip_priv *priv = ds->priv;
 	struct net_device *bridge = dsa_to_port(ds, port)->bridge_dev;
+	unsigned int max_ports = priv->hw_info-> max_ports;
+	u16 vid;
+	int i;
+	int pos = max_ports;
 
 printk("%s:%i: port: %i, bridge: %px\n", __func__, __LINE__, port, bridge);
 
 	/* We only support VLAN filtering on bridges */
 	if (!dsa_is_cpu_port(ds, port) && !bridge)
 		return -EOPNOTSUPP;
+
+	for (vid = vlan->vid_begin; vid <= vlan->vid_end; ++vid) {
+		int idx = -1;
+
+		/* Check if there is already a page for this bridge */
+		for (i = max_ports; i < ARRAY_SIZE(priv->vlans); i++) {
+			if (priv->vlans[i].bridge == bridge &&
+			    priv->vlans[i].vid == vid) {
+				idx = i;
+				break;
+			}
+		}
+
+		/* If this bridge is not programmed yet, add a Active VLAN table
+		 * entry in a free slot and prepare the VLAN mapping table entry.
+		 */
+		if (idx == -1) {
+			/* Look for a free slot */
+			for (; pos < ARRAY_SIZE(priv->vlans); pos++) {
+				if (!priv->vlans[pos].bridge) {
+					idx = pos;
+					break;
+				}
+			}
+
+			if (idx == -1)
+				return -ENOSPC;
+		}
+	}
 
 	return 0;
 }
