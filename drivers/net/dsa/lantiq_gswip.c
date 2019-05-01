@@ -248,6 +248,7 @@ struct gswip_priv {
 	struct gswip_vlan vlans[64];
 	int num_gphy_fw;
 	struct gswip_gphy_fw *gphy_fw;
+	u32 port_vlan_filter;
 };
 
 struct gswip_pce_table_entry {
@@ -1097,6 +1098,9 @@ printk("%s:%i: port: %i, bridge: %px\n", __func__, __LINE__, port, bridge);
 		err = gswip_port_vlan_single_add(priv, bridge, port);
 		if (err)
 			return err;
+		priv->port_vlan_filter &= ~BIT(port);
+	} else {
+		priv->port_vlan_filter |= BIT(port);
 	}
 	return gswip_add_signle_port_br(priv, port, false);
 }
@@ -1155,7 +1159,13 @@ static int gswip_port_vlan_filtering(struct dsa_switch *ds, int port,
 				     bool vlan_filtering)
 {
 	struct gswip_priv *priv = ds->priv;
+	struct dsa_port *dsa_port = dsa_to_port(ds, port);
 printk("%s:%i: port: %i, vlan_filtering: %i\n", __func__, __LINE__, port, vlan_filtering);
+
+	/* Do not allow chaning the vlan filtering options while already in bridge */
+	if (!!(priv->port_vlan_filter & BIT(port)) != vlan_filtering &&
+	    dsa_port->bridge_dev)
+		return -EIO;
 
 	if (vlan_filtering) {
 		/* Use port based VLAN tag */
