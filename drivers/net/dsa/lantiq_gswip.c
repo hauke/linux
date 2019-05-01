@@ -1034,12 +1034,11 @@ static int gswip_port_bridge_join(struct dsa_switch *ds, int port,
 printk("%s:%i: port: %i, bridge: %px\n", __func__, __LINE__, port, bridge);
 
 	/* When the bridge uses VLAN filtering we have to configure VLAN specific bridge */
-	if (br_vlan_enabled(bridge))
-		return 0;
-
-	err = gswip_port_vlan_single_add(priv, bridge, port, 0, 0, true, true, false);
-	if (err)
-		return err;
+	if (!br_vlan_enabled(bridge)) {
+		err = gswip_port_vlan_single_add(priv, bridge, port, 0, 0, true, true, false);
+		if (err)
+			return err;
+	}
 	return gswip_add_signle_port_br(priv, port, false);
 }
 
@@ -1049,12 +1048,11 @@ static void gswip_port_bridge_leave(struct dsa_switch *ds, int port,
 	struct gswip_priv *priv = ds->priv;
 printk("%s:%i: port: %i, bridge: %px\n", __func__, __LINE__, port, bridge);
 
-	/* When the bridge uses VLAN filtering we have to configure VLAN specific bridge */
-	if (br_vlan_enabled(bridge))
-		return 0;
-
 	gswip_add_signle_port_br(priv, port, true);
-	gswip_port_vlan_single_remove(priv, bridge, port, 0, 0, false);
+
+	/* When the bridge uses VLAN filtering we have to configure VLAN specific bridge */
+	if (!br_vlan_enabled(bridge))
+		gswip_port_vlan_single_remove(priv, bridge, port, 0, 0, false);
 }
 
 static void gswip_port_fast_age(struct dsa_switch *ds, int port)
